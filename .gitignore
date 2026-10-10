@@ -208,6 +208,9 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# Local codebase-memory graph generated for repository navigation
+.codebase-memory/
+
 # PyPI configuration file
 .pypirc
 
@@ -218,3 +221,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Market Partner local runtime state and credentials
+.env
+.env.*
+!.env.example
+.local/
+apps/server/.venv/
+apps/server/__pycache__/
+apps/server/**/*.py[cod]
+apps/server/.mypy_cache/
+apps/server/.ruff_cache/
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+*.tsbuildinfo

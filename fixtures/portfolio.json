@@ -1,0 +1,64 @@
+{
+  "fixture_label": "Illustrative sample data; not a real brokerage account or portfolio",
+  "provider_name": "Market Partner local fixture",
+  "currency": "INR",
+  "as_of": "2026-10-10T06:00:00Z",
+  "positions": [
+    {
+      "account_ref": "acct-demo-1",
+      "account_alias": "Sample Account A",
+      "exchange": "NSE",
+      "symbol": "NORTHSTAR",
+      "company_name": "Northstar Components Ltd (fictional demo company)",
+      "sector": "Industrials",
+      "quantity": "25",
+      "market_value_minor": 3750000,
+      "currency": "INR",
+      "valuation_price": "1500.00",
+      "valuation_as_of": "2026-10-10T06:00:00Z",
+      "quality_flags": ["synthetic_fixture"]
+    },
+    {
+      "account_ref": "acct-demo-1",
+      "account_alias": "Sample Account A",
+      "exchange": "NSE",
+      "symbol": "RIVERSTONE",
+      "company_name": "Riverstone Foods Ltd (fictional demo company)",
+      "sector": "Consumer Staples",
+      "quantity": "80",
+      "market_value_minor": 6400000,
+      "currency": "INR",
+      "valuation_price": "800.00",
+      "valuation_as_of": "2026-10-10T06:00:00Z",
+      "quality_flags": ["synthetic_fixture"]
+    },
+    {
+      "account_ref": "acct-demo-2",
+      "account_alias": "Sample Account B",
+      "exchange": "BSE",
+      "symbol": "CEDARTECH",
+      "company_name": "Cedar Technologies Ltd (fictional demo company)",
+      "sector": "Information Technology",
+      "quantity": "40",
+      "market_value_minor": 5200000,
+      "currency": "INR",
+      "valuation_price": "1300.00",
+      "valuation_as_of": "2026-10-10T06:00:00Z",
+      "quality_flags": ["synthetic_fixture"]
+    },
+    {
+      "account_ref": "acct-demo-2",
+      "account_alias": "Sample Account B",
+      "exchange": "NSE",
+      "symbol": "MAPLEBIO",
+      "company_name": "Maple Bio Ltd (fictional demo company)",
+      "sector": "Healthcare",
+      "quantity": "15",
+      "market_value_minor": null,
+      "currency": "INR",
+      "valuation_price": null,
+      "valuation_as_of": null,
+      "quality_flags": ["missing_fixture_valuation", "synthetic_fixture"]
+    }
+  ]
+}

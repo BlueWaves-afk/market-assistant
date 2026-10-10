@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=75,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-partner"
+version = "0.1.0"
+description = "Fixture-first, evidence-led investor research and paper-trading assistant"
+requires-python = ">=3.12"
+dependencies = [
+  "boto3>=1.43,<2",
+  "fastapi>=0.120,<1",
+  "httpx>=0.28,<1",
+  "langgraph==1.2.14",
+  "mcp==1.29.0",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "uvicorn[standard]>=0.38,<1",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.14,<1", "mypy>=1.18,<2"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["market_partner*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]

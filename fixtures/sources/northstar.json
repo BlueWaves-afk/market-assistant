@@ -1,0 +1,56 @@
+{
+  "instrument_id": "NSE:NORTHSTAR:EQ:INR",
+  "company_name": "Northstar Components Ltd (fictional demo company)",
+  "fixture_disclaimer": "All source text and figures below are synthetic examples created only to demonstrate the evidence workflow. They describe no real issuer and must not be used for investing.",
+  "sources": [
+    {
+      "source_id":"src-demo-quarterly-2026q2",
+      "publisher":"Market Partner demo fixture",
+      "source_type":"demonstration_fixture",
+      "title":"Illustrative quarterly operating update (synthetic)",
+      "canonical_url":"fixture://market-partner/northstar/quarterly-update-2026q2",
+      "published_at":"2026-08-14T09:00:00Z",
+      "retrieved_at":"2026-10-10T06:00:00Z",
+      "content_hash":"fixture-sha256-northstar-q2-v1",
+      "license_or_access_class":"synthetic_demo_data",
+      "freshness_status":"fixture_only",
+      "excerpts":[
+        {"excerpt_id":"ex-ns-q2-1","text":"Illustrative consolidated revenue for the fictional quarter was ₹1,240 crore, compared with ₹1,107 crore in the same synthetic period one year earlier."},
+        {"excerpt_id":"ex-ns-q2-2","text":"The fictional update states that two customers together represented 31% of quarterly revenue; customer names are not provided in this synthetic example."},
+        {"excerpt_id":"ex-ns-q2-3","text":"The example filing notes a planned ₹180 crore capacity expansion over three years, subject to board-approved milestones."}
+      ]
+    },
+    {
+      "source_id":"src-demo-annual-2026",
+      "publisher":"Market Partner demo fixture",
+      "source_type":"demonstration_fixture",
+      "title":"Illustrative annual report extracts (synthetic)",
+      "canonical_url":"fixture://market-partner/northstar/annual-report-2026",
+      "published_at":"2026-05-20T09:00:00Z",
+      "retrieved_at":"2026-10-10T06:00:00Z",
+      "content_hash":"fixture-sha256-northstar-ar-v1",
+      "license_or_access_class":"synthetic_demo_data",
+      "freshness_status":"fixture_only",
+      "excerpts":[
+        {"excerpt_id":"ex-ns-ar-1","text":"The fictional company reports a net-debt-to-equity ratio of 0.24 at the illustrative year end; the synthetic report does not provide a full maturity schedule."},
+        {"excerpt_id":"ex-ns-ar-2","text":"The synthetic annual report identifies imported control systems as a production dependency and says supplier qualification takes multiple quarters."},
+        {"excerpt_id":"ex-ns-ar-3","text":"The synthetic filing does not disclose the return-on-invested-capital forecast for the announced expansion."}
+      ]
+    },
+    {
+      "source_id":"src-demo-exchange-2026-09",
+      "publisher":"Market Partner demo fixture",
+      "source_type":"demonstration_fixture",
+      "title":"Illustrative exchange announcement (synthetic)",
+      "canonical_url":"fixture://market-partner/northstar/exchange-announcement-2026-09",
+      "published_at":"2026-09-03T11:00:00Z",
+      "retrieved_at":"2026-10-10T06:00:00Z",
+      "content_hash":"fixture-sha256-northstar-announcement-v1",
+      "license_or_access_class":"synthetic_demo_data",
+      "freshness_status":"fixture_only",
+      "excerpts":[
+        {"excerpt_id":"ex-ns-ex-1","text":"The fictional company announced that commissioning of one production line moved from December 2026 to March 2027 after equipment qualification delays."}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+@startuml
+left to right direction
+
+actor Investor
+actor "Market information providers\n(NSE/BSE, issuers, news and market-data APIs)" as Sources
+actor "SnapTrade\n(optional account-link and holdings provider)" as SnapTrade
+actor "Broker research provider\n(optional; separate integration)" as BrokerResearchProvider
+actor "Upstox sandbox" as Upstox
+actor "Monitoring scheduler\n(if external)" as Scheduler
+actor "Notification provider\n(if email or push alerts)" as Notifications
+
+rectangle "Market Partner — full product target" {
+  usecase "Review portfolio overview" as PortfolioOverview
+  usecase "Read linked holdings" as ReadHoldings
+  usecase "Calculate portfolio metrics" as PortfolioMetrics
+  usecase "Review trade history and performance" as Performance
+  usecase "Read account activities" as AccountActivities
+  usecase "Calculate P&L and performance metrics" as PerformanceMetrics
+  usecase "Review broker-published research" as BrokerResearch
+
+  usecase "Research selected companies" as Research
+  usecase "Collect dated evidence and market data" as Evidence
+  usecase "Produce sourced findings and countercase" as Findings
+  usecase "Save a research dossier" as SaveDossier
+  usecase "Explain changes since prior research" as CompareResearch
+  usecase "Compare new evidence with saved dossier" as CompareDossier
+  usecase "Screen securities by sector or user criteria" as Screen
+  usecase "Apply selected universe and criteria" as ApplyCriteria
+
+  usecase "Connect brokerage accounts" as Connect
+  usecase "Disconnect or revoke linked account access" as Disconnect
+  usecase "Configure watchlist and alert rules" as ConfigureAlerts
+  usecase "Set alert delivery preferences" as AlertPreferences
+  usecase "Scan watched companies for new events" as ScanEvents
+  usecase "Review event alerts" as ReviewAlerts
+  usecase "Deliver event alert" as DeliverAlert
+
+  usecase "Preview a paper order" as Preview
+  usecase "Calculate hypothetical exposure" as HypotheticalExposure
+  usecase "Confirm and submit a paper order" as SubmitPaper
+  usecase "Validate exact preview and confirmation" as ValidateOrder
+  usecase "Check paper-order status" as OrderStatus
+  usecase "Modify a paper order" as ModifyOrder
+  usecase "Cancel a paper order" as CancelOrder
+  usecase "Confirm order change or cancellation" as ConfirmChange
+}
+
+Investor -- PortfolioOverview
+Investor -- Performance
+Investor -- BrokerResearch
+Investor -- Research
+Investor -- SaveDossier
+Investor -- CompareResearch
+Investor -- Screen
+Investor -- Connect
+Investor -- Disconnect
+Investor -- ConfigureAlerts
+Investor -- ReviewAlerts
+Investor -- Preview
+Investor -- SubmitPaper
+Investor -- OrderStatus
+Investor -- ModifyOrder
+Investor -- CancelOrder
+
+PortfolioOverview ..> ReadHoldings : <<include>>
+PortfolioOverview ..> PortfolioMetrics : <<include>>
+Performance ..> AccountActivities : <<include>>
+Performance ..> PerformanceMetrics : <<include>>
+
+Research ..> Evidence : <<include>>
+Research ..> Findings : <<include>>
+SaveDossier ..> Research : <<extend>>\n[user saves findings]
+CompareResearch ..> Evidence : <<include>>
+CompareResearch ..> CompareDossier : <<include>>
+Screen ..> Evidence : <<include>>
+Screen ..> ApplyCriteria : <<include>>
+
+ScanEvents ..> Evidence : <<include>>
+ScanEvents ..> CompareDossier : <<include>>
+ConfigureAlerts ..> AlertPreferences : <<include>>
+DeliverAlert ..> ScanEvents : <<extend>>\n[new material event found]
+
+Preview ..> ReadHoldings : <<include>>
+Preview ..> HypotheticalExposure : <<include>>
+SubmitPaper ..> ValidateOrder : <<include>>
+ModifyOrder ..> ConfirmChange : <<include>>
+CancelOrder ..> ConfirmChange : <<include>>
+
+Sources -- Evidence
+Sources -- PerformanceMetrics
+BrokerResearchProvider -- BrokerResearch
+SnapTrade -- Connect
+SnapTrade -- ReadHoldings
+SnapTrade -- AccountActivities
+SnapTrade -- Disconnect
+Upstox -- SubmitPaper
+Upstox -- OrderStatus
+Upstox -- ModifyOrder
+Upstox -- CancelOrder
+Scheduler -- ScanEvents
+Notifications -- DeliverAlert
+
+note right of AccountActivities
+  SnapTrade account activities are
+  daily refreshed; display freshness.
+end note
+
+note right of BrokerResearch
+  Keep broker-authored material
+  attributed and distinct from
+  Market Partner analysis.
+end note
+
+note right of SubmitPaper
+  Requires separate, explicit
+  confirmation for the exact preview.
+end note
+
+note right of ModifyOrder
+  Modification and cancellation
+  require explicit confirmation.
+end note
+
+note bottom of Screen
+  Criteria are user-selected and
+  transparent; no AI conviction ranking.
+end note
+
+@enduml

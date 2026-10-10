@@ -1,0 +1,6 @@
+{
+  "fixture_label": "Synthetic event used to demonstrate alert workflows only",
+  "events": [
+    {"source_id":"src-demo-event-commissioning-v2","instrument_id":"NSE:NORTHSTAR:EQ:INR","event_class":"operating_update","title":"Illustrative line commissioning delay update","canonical_url":"fixture://market-partner/northstar/exchange-announcement-2026-09","content_hash":"fixture-sha256-northstar-announcement-postponed-v2","published_at":"2026-09-03T11:00:00Z","materiality_score":72,"reason":"The synthetic exchange announcement moves the example production-line commissioning date by one quarter.","source_type":"demonstration_fixture"}
+  ]
+}

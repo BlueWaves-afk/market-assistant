@@ -1,0 +1,7 @@
+{
+  "fixture_label": "Synthetic activity data; incomplete and unsuitable for return or P&L calculations",
+  "activities": [
+    {"activity_id":"act-demo-001","account_ref":"acct-demo-1","account_alias":"Sample Account A","instrument_id":"NSE:NORTHSTAR:EQ:INR","activity_type":"BUY","date":"2026-01-15T10:00:00Z","signed_quantity":"25","gross_amount_minor":3500000,"fees_minor":null,"currency":"INR","source_timestamp":"2026-01-15T10:01:00Z","completeness":["missing_fees","synthetic_fixture"]},
+    {"activity_id":"act-demo-002","account_ref":"acct-demo-2","account_alias":"Sample Account B","instrument_id":"BSE:CEDARTECH:EQ:INR","activity_type":"BUY","date":"2026-03-20T10:00:00Z","signed_quantity":"40","gross_amount_minor":4800000,"fees_minor":null,"currency":"INR","source_timestamp":"2026-03-20T10:01:00Z","completeness":["missing_fees","synthetic_fixture"]}
+  ]
+}
