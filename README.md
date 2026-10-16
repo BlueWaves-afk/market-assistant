@@ -6,6 +6,8 @@ Market Partner is a voice-led product concept for Indian equity investors. The f
 
 The project is being built for the Alexa+ track of the Build, Ship, Shape Amazon Developer Hackathon. Participants cannot connect a project to a real Alexa+ device, so the submission uses a browser-based Alexa+ style voice and text simulator backed by a self-hosted MCP server. See the [official rules](https://amazonappdev2026.devpost.com/rules) and [FAQ](https://amazonappdev2026.devpost.com/details/faqs).
 
+The conversation and paper-trade interface follows Alexa+ add-on guidance for voice-plus-touch tasks, glanceable cards, and separate confirmations. The [UI research note](docs/ALEXA_PLUS_UI_RESEARCH.md) maps those official design sources to this demo and documents the synthetic-data boundary.
+
 For this track, the integration is a **real Market Partner MCP server**, not a native connection to the Alexa+ service. The web conversation host connects over Streamable HTTP using the pinned 2025-11-25 protocol contract, performs MCP `initialize` and `tools/list`, then invokes tools with `tools/call`. The browser demo uses this runtime path; a mock tool call or a server that is only named in the README would not demonstrate the required technology. The FAQ says the gated Alexa+ developer tools are unavailable to hackathon participants and recommends this self-hosted MCP plus web-simulator approach.
 
 ## Product use-case overview

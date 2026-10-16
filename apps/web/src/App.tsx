@@ -40,11 +40,12 @@ const nav: { id: Page; label: string; icon: typeof Sparkles; group: string }[] =
   { id: "research", label: "Research", icon: BookOpenCheck, group: "Workspace" },
   { id: "discovery", label: "Discovery", icon: Compass, group: "Tools" },
   { id: "monitoring", label: "Monitoring", icon: Bell, group: "Tools" },
-  { id: "orders", label: "Paper orders", icon: WalletCards, group: "Tools" },
+  { id: "orders", label: "Trade", icon: WalletCards, group: "Tools" },
   { id: "connections", label: "Connections", icon: Link2, group: "Settings" },
 ];
 
 const demoSymbols = ["NORTHSTAR", "RIVERSTONE", "CEDARTECH", "MAPLEBIO"];
+const demoSectors: Record<string, string> = { NORTHSTAR: "Industrials", RIVERSTONE: "Consumer staples", CEDARTECH: "Technology", MAPLEBIO: "Healthcare" };
 const researchSymbols = ["NORTHSTAR"];
 const companyNames: Record<string, string> = {
   NORTHSTAR: "Northstar Components Ltd",
@@ -58,9 +59,11 @@ const instrumentIds: Record<string, string> = {
   CEDARTECH: "BSE:CEDARTECH:EQ:INR",
   MAPLEBIO: "NSE:MAPLEBIO:EQ:INR",
 };
+const spokenQuantities: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5, SIX: 6, SEVEN: 7, EIGHT: 8, NINE: 9, TEN: 10 };
 
 function App() {
   const [page, setPage] = useState<Page>("assistant");
+  const [tradeSymbol, setTradeSymbol] = useState("");
   const [health, setHealth] = useState<JsonRecord | null>(null);
   const [mcpState, setMcpState] = useState<JsonRecord | null>(null);
   const [toast, setToast] = useState("");
@@ -83,10 +86,10 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-lockup">
-          <div className="brand-mark"><Activity size={18} strokeWidth={2.5} /></div>
+          <div className="brand-mark"><Sparkles size={18} strokeWidth={2.3} /></div>
           <div>
             <div className="brand-name">market partner</div>
-            <div className="brand-caption">evidence before action</div>
+            <div className="brand-caption">voice · research · trade</div>
           </div>
         </div>
         <div className="workspace-switcher">
@@ -124,12 +127,12 @@ function App() {
           </div>
         </header>
         <div className="page-content">
-          {page === "assistant" && <AssistantPage notify={notify} />}
+          {page === "assistant" && <AssistantPage notify={notify} onTradeSymbol={(symbol) => { setTradeSymbol(symbol); setPage("orders"); }} onOpenOrders={() => setPage("orders")} />}
           {page === "portfolio" && <PortfolioPage notify={notify} />}
           {page === "research" && <ResearchPage notify={notify} />}
           {page === "discovery" && <DiscoveryPage notify={notify} />}
           {page === "monitoring" && <MonitoringPage notify={notify} />}
-          {page === "orders" && <OrdersPage notify={notify} />}
+          {page === "orders" && <OrdersPage notify={notify} initialSymbol={tradeSymbol} />}
           {page === "connections" && <ConnectionsPage notify={notify} />}
         </div>
       </main>
@@ -168,9 +171,9 @@ function DataBadge({ children, tone = "green" }: { children: React.ReactNode; to
   return <span className={`data-badge badge-${tone}`}><span className="badge-dot" />{children}</span>;
 }
 
-function AssistantPage({ notify }: { notify: (message: string) => void }) {
+function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (message: string) => void; onTradeSymbol: (symbol: string) => void; onOpenOrders: () => void }) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: "Good morning, Tom. What would you like to examine? I can work through the sample portfolio, research a demo company, or screen the fictional universe. Every result keeps its sources and uncertainty visible." },
+    { role: "assistant", content: "Hi Tom. Ask me to research a company, review your sample portfolio, or prepare a paper-order preview from terms you provide. I’ll show the evidence and ask you to confirm any order on screen." },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -253,51 +256,112 @@ function AssistantPage({ notify }: { notify: (message: string) => void }) {
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   }, []);
 
-  return <div className="assistant-layout">
+  return <div className="assistant-layout alexa-assistant">
     <div className="assistant-main">
-      <PageHeading eyebrow="Your research workspace" title="A clearer way to think it through." copy="Ask a question, examine the evidence, and keep the decision in your hands." />
+      <div className="voice-stage">
+        <button type="button" className={`voice-orb ${listening ? "is-listening" : ""} ${sending ? "is-thinking" : ""}`} onClick={toggleMic} disabled={sending} aria-label={listening ? "Stop listening" : "Start a voice conversation"}>
+          <span className="voice-orb-halo" /><span className="voice-orb-core"><Sparkles size={25} /></span>
+        </button>
+        <div className="voice-stage-copy">
+          <div className="eyebrow">Market Partner · voice + touch</div>
+          <h1>{listening ? "I’m listening." : sending ? "Let me look into that." : "What would you like to explore?"}</h1>
+          <p>{listening ? "Finish your request and I’ll send the transcript." : "Research a company, understand portfolio exposure, or rehearse a paper order."}</p>
+        </div>
+      </div>
+      <section className="stock-carousel-panel" aria-label="Demo stock list">
+        <div className="stock-carousel-heading"><div><div className="eyebrow">Explore the sample universe</div><h2>Which company should we look at?</h2></div><DataBadge tone="amber">Fictional · no live quotes</DataBadge></div>
+        <div className="stock-carousel">{demoSymbols.map((symbol) => <article className="stock-carousel-item" key={symbol}>
+          <div className="stock-carousel-identity"><span className="stock-monogram">{symbol.slice(0, 1)}</span><div><strong>{symbol}</strong><span>{demoSectors[symbol]}</span></div></div>
+          <p>{companyNames[symbol].replace(" Ltd", "")}</p>
+          <button className="stock-carousel-action" onClick={() => onTradeSymbol(symbol)}>Open paper ticket <ArrowRight size={15} /></button>
+        </article>)}</div>
+      </section>
       <div className="assistant-conversation">
-        <div className="conversation-topline"><div className="assistant-avatar"><Sparkles size={17} /></div><div><strong>Market Partner</strong><span>Evidence-led assistant</span></div><div className="conversation-tools"><span className="connection-tag"><span className="status-led online" /> MCP connected</span><button className="icon-button" onClick={toggleSpeaking} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>{speaking ? <Volume2 size={17} /> : <VolumeX size={17} />}</button></div></div>
+        <div className="conversation-topline"><div className="assistant-avatar"><Sparkles size={17} /></div><div><strong>Market Partner</strong><span>Conversation · sample workspace</span></div><div className="conversation-tools"><span className="connection-tag"><span className="status-led online" /> Ready</span><button className="icon-button" onClick={toggleSpeaking} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>{speaking ? <Volume2 size={18} /> : <VolumeX size={18} />}</button></div></div>
         <div className="message-list" aria-live="polite">
           {messages.map((message, index) => <div className={`message-row ${message.role}`} key={`${message.role}-${index}`}>
             {message.role === "assistant" && <div className="message-avatar"><Sparkles size={14} /></div>}
             <div className="message-content"><div className="message-bubble">{message.content}</div>
-              {message.tool_calls?.length ? <div className="tool-call-note"><Radio size={12} /> MCP tool called: {message.tool_calls.map((call) => call.name).join(", ")}</div> : null}
-              {message.model_usage && <div className="tool-call-note">Sarvam usage: {message.model_usage.requests} requests · {Number(message.model_usage.prompt_tokens).toLocaleString()} input / {Number(message.model_usage.completion_tokens).toLocaleString()} output tokens</div>}
-              {message.data && <ChatResult data={message.data} />}
+              {message.tool_calls?.length ? <div className="tool-call-note"><Radio size={13} />{message.tool_calls.some((call) => call.name === "preview_paper_order") ? "Paper-order preview prepared" : message.tool_calls.some((call) => call.name === "research_company") ? "Research sources checked" : "Sample portfolio data checked"}</div> : null}
+              {message.model_usage && <details className="usage-details"><summary>Usage details</summary><span>{message.model_usage.requests} assistant steps · {Number(message.model_usage.prompt_tokens).toLocaleString()} input / {Number(message.model_usage.completion_tokens).toLocaleString()} output tokens</span></details>}
+              {message.data && <ChatResult data={message.data} notify={notify} onOpenOrders={onOpenOrders} />}
             </div>
           </div>)}
-          {sending && <div className="message-row assistant"><div className="message-avatar"><Sparkles size={14} /></div><div className="message-bubble typing"><span /><span /><span /></div></div>}
+          {sending && <div className="message-row assistant"><div className="message-avatar"><Sparkles size={14} /></div><div className="message-content"><div className="message-bubble typing"><span /><span /><span /></div><span className="tool-call-note">Checking the selected sources…</span></div></div>}
         </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); void send(); }}>
           <button type="button" className={`mic-button ${listening ? "listening" : ""}`} onClick={toggleMic} disabled={sending} aria-label={listening ? "Stop speech input" : "Start speech input"}>{listening ? <MicOff size={18} /> : <Mic size={18} />}</button>
-          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={listening ? "Listening…" : "Ask about a company, your sample portfolio, or a screen…"} aria-label="Ask Market Partner" />
+          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={listening ? "Listening…" : "Ask Market Partner anything…"} aria-label="Ask Market Partner" />
           <button className="send-button" disabled={!input.trim() || sending} type="submit" aria-label="Send message"><Send size={17} /></button>
         </form>
-        <div className="composer-foot"><span>{listening ? "Listening… your request sends when you finish speaking." : "Tap the mic to speak; your request sends automatically. Typing is always available."}</span><span>English (India)</span></div>
+        <div className="composer-foot"><span>{listening ? "Listening · tap the blue mic to stop." : "Tap to talk · your speech is transcribed and sent when you finish."}</span><span>English (India)</span></div>
       </div>
-      <div className="prompt-suggestions"><span className="suggestion-label">Try asking</span>{[
-        "Research NORTHSTAR and show the countercase",
+      <div className="prompt-suggestions"><span className="suggestion-label">Try saying</span>{[
+        "Research NORTHSTAR and show both sides",
         "What is my NORTHSTAR exposure?",
-        "Can you calculate my performance?",
-      ].map((prompt) => <button key={prompt} onClick={() => void send(prompt)}>{prompt}<ArrowRight size={13} /></button>)}</div>
+        "Preview a paper buy of 2 NORTHSTAR at 1500 rupees in Sample Account A",
+      ].map((prompt) => <button key={prompt} onClick={() => void send(prompt)}>{prompt}<ArrowRight size={14} /></button>)}</div>
     </div>
     <aside className="assistant-aside">
-      <div className="aside-card welcome-card"><div className="welcome-spark"><Sparkles size={20} /></div><div className="eyebrow">Built for thoughtful decisions</div><h3>See both sides.<br />Keep your agency.</h3><p>Every research run separates reported facts from interpretation, shows a countercase, and names what the evidence cannot answer.</p><div className="mini-rule" /><div className="welcome-foot"><ShieldCheck size={15} /> No buy, hold, or sell recommendations</div></div>
-      <div className="aside-card"><SectionHeading title="Today’s workspace" /><div className="mini-stat"><span>Evidence mode</span><strong><span className="status-led online" /> Synthetic fixture</strong></div><div className="mini-stat"><span>Portfolio links</span><strong>2 sample accounts</strong></div><div className="mini-stat"><span>Order mode</span><strong>Local paper only</strong></div><div className="aside-note"><CircleHelp size={14} /> Nothing here represents a real portfolio or market quote.</div></div>
-      <div className="aside-card mcp-card"><div className="mcp-card-icon"><Radio size={16} /></div><div><strong>Connected through MCP</strong><p>The conversation host discovers and calls Market Partner tools over Streamable HTTP.</p></div></div>
+      <div className="aside-card alexa-environment-card"><div className="eyebrow">Current workspace</div><h2>Sample data, clear limits.</h2><div className="environment-stat"><span>Company universe</span><strong>4 fictional stocks</strong></div><div className="environment-stat"><span>Research packet</span><strong>1 company</strong></div><div className="environment-stat"><span>Order path</span><strong>Paper simulator</strong></div><div className="stock-data-note"><ShieldCheck size={15} /> Quotes are unavailable; you enter the limit price.</div></div>
+      <div className="aside-card alexa-guidance-card"><div className="welcome-spark"><Sparkles size={19} /></div><div className="eyebrow">Evidence before action</div><h3>See both sides.<br />Keep your agency.</h3><p>Research shows the strongest case, the countercase, sources, and open questions. Orders always need your on-screen confirmation.</p><div className="mini-rule" /><div className="welcome-foot"><ShieldCheck size={16} /> No personalized trade advice</div></div>
     </aside>
   </div>;
 }
 
-function ChatResult({ data }: { data: JsonRecord }) {
+function ChatResult({ data, notify, onOpenOrders }: { data: JsonRecord; notify: (message: string) => void; onOpenOrders: () => void }) {
   const sources = data.source_packet ?? data.snapshot?.positions;
+  const orderPreview = data.preview_id ? data : data.result?.preview_id ? data.result : null;
+  if (orderPreview) return <PaperOrderPreviewCard data={orderPreview} notify={notify} onOpenOrders={onOpenOrders} />;
   if (data.source_packet) {
     return <div className="chat-result-card"><div className="result-card-head"><strong>{data.company_name}</strong><DataBadge tone="amber">Synthetic source packet</DataBadge></div><div className="result-two-col"><div><span className="micro-label">Supported case</span><p>{data.supported_case?.[0] ?? "No supported case returned."}</p></div><div><span className="micro-label">Countercase</span><p>{data.countercase?.[0] ?? "No countercase returned."}</p></div></div><div className="citation-pills">{(sources ?? []).slice(0, 4).map((source: JsonRecord) => <span key={source.source_id}><FileText size={12} />{source.title}</span>)}</div></div>;
   }
   if (data.snapshot) return <div className="chat-result-card"><div className="result-card-head"><strong>Sample portfolio snapshot</strong><DataBadge tone="amber">Fixture</DataBadge></div><p>{data.summary}</p><div className="citation-pills"><span><BriefcaseBusiness size={12} />{data.snapshot.positions?.length ?? 0} positions</span><span><Activity size={12} />As of {prettyDate(data.snapshot.as_of)}</span></div></div>;
   if (Array.isArray(data)) return <div className="chat-result-card"><strong>Workflow result</strong><p>{data.length} records returned. Open the relevant workspace panel to review details.</p></div>;
   return <div className="chat-result-card"><div className="result-card-head"><strong>Workflow result</strong><DataBadge tone="gray">Structured data</DataBadge></div><pre>{JSON.stringify(data, null, 2).slice(0, 1100)}</pre></div>;
+}
+
+function PaperOrderPreviewCard({ data, notify, onOpenOrders }: { data: JsonRecord; notify: (message: string) => void; onOpenOrders: () => void }) {
+  const [reviewed, setReviewed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmedOrder, setConfirmedOrder] = useState<JsonRecord | null>(null);
+  const [error, setError] = useState("");
+  const symbol = data.symbol ?? data.instrument_id?.split(":")[1] ?? "Selected security";
+  const sandbox = data.mode === "sandbox";
+
+  const confirmPreview = async () => {
+    if (!reviewed || busy || confirmedOrder) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { confirmation_token } = await post<{ confirmation_token: string }>(`/api/orders/${data.preview_id}/confirmation-token`, { explicit_confirmation: true });
+      const order = await post<JsonRecord>(`/api/orders/${data.preview_id}/confirm`, {
+        explicit_confirmation: true,
+        confirmation_token,
+        idempotency_key: crypto.randomUUID(),
+      });
+      setConfirmedOrder(order);
+      notify(sandbox ? "Sandbox paper order confirmed. No live brokerage order was sent." : "Paper order recorded locally. No brokerage or exchange order was sent.");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "This preview could not be confirmed. Review or create a fresh preview.";
+      setError(message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <section className="chat-order-card" aria-label="Paper order preview">
+    <div className="chat-order-head"><div><div className="eyebrow">Review every term</div><h3>{data.side} {data.quantity} {symbol}</h3></div><DataBadge tone="amber">{sandbox ? "Sandbox simulation" : "Paper simulation"}</DataBadge></div>
+    <div className="chat-order-terms">
+      <div><span>Limit price</span><strong>{money(Math.round(Number(data.limit_price) * 100))}</strong></div>
+      <div><span>Estimated total</span><strong>{money(data.estimated_value_minor)}</strong></div>
+      <div><span>Account</span><strong>{data.account_alias ?? "Sample account"}</strong></div>
+      <div><span>Preview expires</span><strong>{prettyDate(data.expires_at)}</strong></div>
+    </div>
+    {(data.warning || data.mode === "local_paper") && <p className="chat-order-warning"><ShieldCheck size={15} />{data.warning ?? "This is a local simulation. Nothing is sent to a broker or exchange."}</p>}
+    {confirmedOrder ? <div className="chat-order-confirmed"><ShieldCheck size={17} /><span><strong>Paper order recorded</strong><small>{confirmedOrder.status?.replaceAll("_", " ") ?? "Confirmation received"} · {confirmedOrder.order_id}</small></span><button className="text-action" onClick={onOpenOrders}>View orders</button></div> : <div className="chat-order-confirm-row"><label className="checkbox-label"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed the exact security, side, quantity, account, and limit price. Confirm this {sandbox ? "sandbox" : "local paper"} simulation.</span></label><Button onClick={() => void confirmPreview()} disabled={!reviewed || busy} icon={<Check size={16} />}>{busy ? "Confirming…" : "Confirm paper order"}</Button></div>}
+    {error && <p className="chat-order-error" role="alert">{error}</p>}
+  </section>;
 }
 
 function PortfolioPage({ notify }: { notify: (message: string) => void }) {
@@ -516,12 +580,12 @@ function MonitoringPage({ notify }: { notify: (message: string) => void }) {
   </div>;
 }
 
-function OrdersPage({ notify }: { notify: (message: string) => void }) {
-  const [symbol, setSymbol] = useState("NORTHSTAR");
-  const [side, setSide] = useState("BUY");
-  const [quantity, setQuantity] = useState("2");
-  const [price, setPrice] = useState("1500.00");
-  const [accountAlias, setAccountAlias] = useState("Sample Account A");
+function OrdersPage({ notify, initialSymbol }: { notify: (message: string) => void; initialSymbol: string }) {
+  const [symbol, setSymbol] = useState(initialSymbol);
+  const [side, setSide] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [price, setPrice] = useState("");
+  const [accountAlias, setAccountAlias] = useState("");
   const [accounts, setAccounts] = useState<JsonRecord[]>([]);
   const [upstoxReady, setUpstoxReady] = useState(false);
   const [upstoxMappingReady, setUpstoxMappingReady] = useState(false);
@@ -533,7 +597,11 @@ function OrdersPage({ notify }: { notify: (message: string) => void }) {
   const [changeTerms, setChangeTerms] = useState({ quantity: "", limit_price: "" });
   const [changeConfirmed, setChangeConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const exchange = symbol === "CEDARTECH" ? "BSE" : "NSE";
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const voiceRecognition = useRef<SpeechRecognition | null>(null);
+  const exchange = symbol ? (symbol === "CEDARTECH" ? "BSE" : "NSE") : "";
+  const canPreview = Boolean(symbol && side && Number.isInteger(Number(quantity)) && Number(quantity) > 0 && Number(price) > 0 && accountAlias);
 
   const refresh = async () => {
     const [accountRows, orderRows, health] = await Promise.all([api<JsonRecord[]>("/api/accounts"), api<JsonRecord[]>("/api/orders"), api<JsonRecord>("/api/health")]);
@@ -541,11 +609,57 @@ function OrdersPage({ notify }: { notify: (message: string) => void }) {
     setAccounts(availableAccounts); setOrders(orderRows);
     setUpstoxReady(Boolean(health.providers?.upstox_sandbox));
     setUpstoxMappingReady(Boolean(health.capabilities?.upstox_instrument_mapping));
-    if (!availableAccounts.find((account) => account.alias === accountAlias)) setAccountAlias(availableAccounts[0]?.alias ?? "");
+    if (!availableAccounts.find((account) => account.alias === accountAlias)) setAccountAlias("");
   };
   useEffect(() => { void refresh().catch((error) => notify(error.message)); }, []);
+  useEffect(() => { setSymbol(initialSymbol); }, [initialSymbol]);
+  useEffect(() => () => voiceRecognition.current?.stop(), []);
+
+  const startVoiceOrder = () => {
+    if (voiceListening) {
+      voiceRecognition.current?.stop();
+      setVoiceListening(false);
+      return;
+    }
+    const Constructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!Constructor) {
+      notify("Speech recognition is not available in this browser. You can enter the terms below.");
+      return;
+    }
+    setSymbol(""); setSide(""); setQuantity(""); setPrice(""); setAccountAlias(""); setVoiceTranscript("");
+    const instance = new Constructor();
+    instance.lang = "en-IN";
+    instance.continuous = false;
+    instance.interimResults = false;
+    instance.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim() ?? "";
+      if (!transcript) return;
+      setVoiceTranscript(transcript);
+      const normalized = transcript.toUpperCase().replace(/[^A-Z0-9., ]/g, " ").replace(/\s+/g, " ").trim();
+      let filled: string[] = [];
+      const compact = normalized.replace(/[^A-Z0-9]/g, "");
+      const matchedSymbol = demoSymbols.find((item) => compact.includes(item) || compact.includes(companyNames[item].toUpperCase().replace(/[^A-Z0-9]/g, "")));
+      if (matchedSymbol) { setSymbol(matchedSymbol); filled.push("security"); }
+      const spokenSide = /\b(SELL|SELLING|SOLD)\b/.test(normalized) ? "SELL" : /\b(BUY|BUYING|PURCHASE)\b/.test(normalized) ? "BUY" : null;
+      if (spokenSide) { setSide(spokenSide); filled.push("side"); }
+      const quantityMatch = normalized.match(/\b(?:BUY|SELL|BUYING|SELLING|PURCHASE)\s+(\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\b/) ?? normalized.match(/\b(\d+|ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN)\s+(?:SHARES?|STOCKS?)\b/);
+      const quantityValue = quantityMatch?.[1] ? Number(quantityMatch[1]) || spokenQuantities[quantityMatch[1]] : undefined;
+      if (quantityValue) { setQuantity(String(quantityValue)); filled.push("quantity"); }
+      const priceMatch = normalized.match(/\b(?:AT|LIMIT(?: PRICE)?|PRICE(?: OF)?)\s+(?:(?:INR|RS|RUPEES?)\s*)?([\d,]+(?:\.\d{1,2})?)/);
+      if (priceMatch?.[1]) { setPrice(priceMatch[1].replaceAll(",", "")); filled.push("limit price"); }
+      const matchedAccount = accounts.find((account) => normalized.includes(String(account.alias).toUpperCase()));
+      if (matchedAccount) { setAccountAlias(matchedAccount.alias); filled.push("account"); }
+      notify(filled.length ? `I filled ${filled.join(", ")}. Review every field, then create a preview; nothing has been submitted.` : "I heard you, but couldn’t match explicit order terms. Enter or repeat the security, side, quantity, and limit price.");
+    };
+    instance.onerror = () => { setVoiceListening(false); notify("Speech input stopped. You can enter the terms below."); };
+    instance.onend = () => setVoiceListening(false);
+    voiceRecognition.current = instance;
+    try { instance.start(); setVoiceListening(true); }
+    catch { setVoiceListening(false); notify("Could not start the microphone. Check browser permission and try again."); }
+  };
 
   const makePreview = async () => {
+    if (!canPreview) { notify("Choose the security, side, quantity, limit price, and account before creating a preview."); return; }
     setBusy(true); setConfirmed(false);
     try { setPreview(await post<JsonRecord>("/api/orders/preview", { symbol, exchange, side, quantity: Number(quantity), limit_price: price, account_alias: accountAlias })); setChangePreview(null); }
     catch (error) { notify(error instanceof Error ? error.message : "Could not create order preview."); }
@@ -588,13 +702,17 @@ function OrdersPage({ notify }: { notify: (message: string) => void }) {
     finally { setBusy(false); }
   };
 
-  return <div className="page-stack">
-    <PageHeading eyebrow="Paper trading" title="Rehearse the terms before confirming." copy="Every preview is immutable and expires after five minutes. Confirmations apply only to the local simulator or explicitly enabled broker sandbox." />
+  return <div className="page-stack trade-page">
+    <PageHeading eyebrow="Trade · paper simulation" title="Say the terms. Review them. Then confirm." copy="Use voice or touch to prepare a ticket. Every order is previewed first and remains a simulation; no live brokerage order is sent." />
     <div className="notice notice-amber"><ShieldCheck size={17} /><div><strong>{upstoxReady && upstoxMappingReady ? "Local paper and Upstox sandbox modes" : "Local paper mode · no real money"}</strong><span>{upstoxReady && upstoxMappingReady ? "Upstox sandbox is configured for mapped instruments; it cannot reach a live brokerage account." : upstoxReady ? "Sandbox credentials are present, but no demo security has a verified Upstox instrument key. Orders remain local." : "Nothing is sent to Upstox, a brokerage, or an exchange. Sandbox stays disabled until credentials, exact endpoint behavior, and instrument mapping are verified."}</span></div></div>
+    <Panel className={`trade-voice-panel ${voiceListening ? "is-listening" : ""}`}>
+      <div className="trade-voice-copy"><span className="trade-voice-orb"><Mic size={21} /></span><div><div className="eyebrow">Voice order entry</div><strong>{voiceListening ? "Listening for order terms…" : "Tell me the order you want to rehearse."}</strong><p>For example: “Buy 2 NORTHSTAR shares at 1500 rupees in Sample Account A.” Speech fills the ticket only; it never creates a preview or submits an order.</p>{voiceTranscript && <div className="voice-transcript"><span>Heard</span> “{voiceTranscript}”</div>}</div></div>
+      <Button variant="secondary" onClick={startVoiceOrder} disabled={busy} icon={voiceListening ? <MicOff size={17} /> : <Mic size={17} />}>{voiceListening ? "Stop listening" : "Speak order"}</Button>
+    </Panel>
     <div className="content-grid two-thirds">
       <Panel><SectionHeading title="Create order preview" detail="Enter all terms yourself. Market Partner will not choose a security, side, size, or price." />
-        <div className="form-grid order-form"><label className="field"><span>Security</span><select value={symbol} onChange={(event) => setSymbol(event.target.value)}>{demoSymbols.map((item) => <option key={item}>{item}</option>)}</select></label><label className="field"><span>Exchange</span><input value={exchange} readOnly /></label><label className="field"><span>Side</span><select value={side} onChange={(event) => setSide(event.target.value)}><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label><label className="field"><span>Whole-share quantity</span><input type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label><label className="field"><span>Limit price (₹)</span><input type="number" min="0.01" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} /></label><label className="field"><span>Sample account</span><select value={accountAlias} onChange={(event) => setAccountAlias(event.target.value)}>{accounts.map((account) => <option key={account.account_ref} value={account.alias}>{account.alias} · {account.mode}</option>)}</select></label></div>
-        <div className="order-bottom"><span><ShieldCheck size={14} /> User-specified scenario only</span><Button onClick={() => void makePreview()} disabled={busy} icon={<ArrowRight size={15} />}>Preview paper order</Button></div>
+        <div className="form-grid order-form"><label className="field"><span>Security</span><select value={symbol} onChange={(event) => setSymbol(event.target.value)}><option value="">Choose a demo stock</option>{demoSymbols.map((item) => <option key={item} value={item}>{item} · {demoSectors[item]}</option>)}</select></label><label className="field"><span>Exchange</span><input value={exchange} placeholder="Selected automatically" readOnly /></label><label className="field"><span>Side</span><select value={side} onChange={(event) => setSide(event.target.value)}><option value="">Choose side</option><option value="BUY">Buy</option><option value="SELL">Sell</option></select></label><label className="field"><span>Whole-share quantity</span><input type="number" min="1" step="1" placeholder="Enter quantity" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label><label className="field"><span>Your limit price (₹)</span><input type="number" min="0.01" step="0.01" placeholder="Enter limit price" value={price} onChange={(event) => setPrice(event.target.value)} /></label><label className="field"><span>Sample account</span><select value={accountAlias} onChange={(event) => setAccountAlias(event.target.value)}><option value="">Choose sample account</option>{accounts.map((account) => <option key={account.account_ref} value={account.alias}>{account.alias} · {account.mode}</option>)}</select></label></div>
+        <div className="order-bottom"><span><ShieldCheck size={14} /> All order terms must be explicit</span><Button onClick={() => void makePreview()} disabled={busy || !canPreview} icon={<ArrowRight size={15} />}>Review exact terms</Button></div>
       </Panel>
       <Panel><SectionHeading title="Order guardrails" detail="Confirmation must be a separate action." /><div className="guardrail-list"><Guardrail title="Immutable terms" copy="Any change to security, side, quantity, account, or limit price requires a new preview." /><Guardrail title="Five-minute expiry" copy="Expired previews cannot be confirmed. Start again with current terms." /><Guardrail title="No automatic retries" copy="The local simulator records an outcome; a real provider would require reconciliation." /><Guardrail title="No action advice" copy="The exposure scenario is descriptive and does not mean the order is suitable." /></div></Panel>
     </div>
