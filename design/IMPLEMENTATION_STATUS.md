@@ -1,6 +1,6 @@
 # Implementation status
 
-**Updated:** 10 October 2026
+**Updated:** 16 October 2026
 **Scope:** Local judging build of the 30 designed use cases. The app defaults to synthetic fixtures and a local SQLite store. “Implemented” below means the designed behavior has an executable local path, or returns the designed explicit unavailable state when a provider/data gate is closed. It does not mean a production provider is connected.
 
 ## Use-case coverage
@@ -16,7 +16,7 @@
 | UC-07 Review broker-published research | The service returns an explicit unavailable result distinct from Market Partner analysis. | No broker-research provider or content rights are configured. |
 | UC-08 Research selected companies | Web workflow and MCP `research_company` create a research run for one selected demo company. | The local packet is synthetic and currently exists only for NORTHSTAR; other symbols return explicit packet-unavailable. Live issuer research is not configured. |
 | UC-09 Collect dated evidence | Bounded source adapter loads dated, hashed fixture records and excerpts. | Live-source collection and licensing review remain outstanding. |
-| UC-10 Produce sourced findings | LangGraph runs independent specialist and bull/bear analyses, validates excerpt IDs, and returns claims, countercase, disagreements, and unknowns. | Fixture mode is deterministic; Bedrock requires AWS credentials, region access, model ID, and permissions. |
+| UC-10 Produce sourced findings | LangGraph runs independent specialist and bull/bear analyses, validates excerpt IDs, and returns claims, countercase, disagreements, and unknowns. | Sarvam is configured as the local demo model provider; actual request and token totals are attached to each research run. Fixture mode remains available when provider access is disabled. |
 | UC-11 Save research dossier | User can save, list, compare, and archive versioned local dossiers. | Local demo owner only; no multi-user identity. |
 | UC-12 Explain research changes | New runs are compared with a prior dossier baseline and explain source-set changes. | Conclusion changes require reading the underlying evidence; the app does not output a trade direction. |
 | UC-13 Compare evidence with dossier | Content hashes classify new, unchanged, and removed sources. | The local packet is synthetic and intentionally small. |
@@ -32,7 +32,7 @@
 | UC-23 Preview a paper order | User enters every term; the service creates an immutable five-minute preview. | Default is local simulation; sandbox requires verified configuration and a mapped instrument. |
 | UC-24 Calculate hypothetical exposure | Fixed-precision scenario arithmetic uses the selected account's fixture positions. | Unknown holdings remain unavailable; sandbox sells are blocked because sandbox holdings are not linked. |
 | UC-25 Confirm and submit a paper order | Preview-bound, one-time confirmation creates an idempotent local paper order. | Optional adapter is restricted to the Upstox sandbox origin and uses an explicit enable/verify gate; no live endpoint exists. |
-| UC-26 Validate order confirmation | Exact preview state, expiry, one-time confirmation grant, and idempotency key are checked before acceptance. | UI confirmation is separate; no confirmation tool is exposed to Bedrock. |
+| UC-26 Validate order confirmation | Exact preview state, expiry, one-time confirmation grant, and idempotency key are checked before acceptance. | UI confirmation is separate; no confirmation tool is exposed to any model provider. |
 | UC-27 Check paper-order status | Local order history is readable; sandbox status refresh and tag reconciliation are implemented behind the provider gate. | Provider response/state mappings must be verified before enabling sandbox mode. |
 | UC-28 Modify paper order | User can create and separately confirm a local change preview. | Upstox sandbox modify is disabled pending endpoint and state-machine verification. |
 | UC-29 Cancel paper order | User can create and separately confirm a local cancellation preview. | Upstox sandbox cancel is disabled pending endpoint and state-machine verification. |
@@ -42,14 +42,15 @@
 
 - React/Vite browser client under `apps/web`.
 - FastAPI application under `apps/server/market_partner`, with JSON REST endpoints and a Streamable HTTP MCP endpoint at `/mcp`.
-- The browser conversation host discovers and calls the local MCP server at runtime. Bedrock receives an explicit allowlist of research/read/preview tools; confirmation, account, alert, and persistence mutations stay behind the UI. Owner, account, and credential identifiers are removed from MCP tool results before sending context to Bedrock.
+- The browser conversation host discovers and calls the local MCP server at runtime. Sarvam receives an explicit allowlist of research/read/preview tools; confirmation, account, alert, and persistence mutations stay behind the UI. Owner, account, and credential identifiers are removed from MCP tool results before sending context to a model provider. Conversation and research responses include Sarvam token-usage totals.
 - SQLite state defaults to `.local/market-partner.sqlite3`; fixtures live in `fixtures/`. Both runtime state and credentials are ignored by Git.
 
 ## Configuration and gates
 
 | Capability | Required before enabling | Current state |
 |---|---|---|
-| Bedrock | `BEDROCK_ENABLED=true`, model ID, AWS SDK credential chain, region access, and model permissions. | Adapter is implemented; credentials, auth, and model response behavior are not verified. |
+| Sarvam | `SARVAM_ENABLED=true`, API subscription key, and supported model ID. | Stable chat-completion adapter handles assistant tool routing and research-agent calls. The local `.env` enables `sarvam-105b`. |
+| Bedrock | `BEDROCK_ENABLED=true`, model ID, AWS SDK credential chain, region access, and model permissions. | Adapter is implemented as an optional provider; AWS access is not required for the local demo. |
 | Upstox sandbox | `UPSTOX_SANDBOX_ENABLED=true`, `UPSTOX_SANDBOX_VERIFIED=true`, sandbox token, approved instrument tokens, and verified place/status/tag-reconciliation behavior. | Adapter is implemented but disabled by default. Fixture instrument tokens are null. |
 | SnapTrade | Provider approval, OAuth/callback flow, encrypted token storage, owner authorization, freshness handling, and revocation. | Not integrated. Credentials alone do not show the capability as ready. |
 | Live market/source data | Approved source and data licenses, canonical security mappings, freshness limits, and provenance. | Not configured; no fixture is represented as live information. |

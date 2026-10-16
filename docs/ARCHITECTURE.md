@@ -63,7 +63,7 @@ The [high-level design](HLD.md) provides the corresponding C4 context, container
 flowchart LR
     U[User voice or text] --> UI[Alexa+ style browser simulator]
     UI --> API[Conversation backend]
-    API -->|multi-turn tool use| BED[Amazon Bedrock Converse]
+    API -->|multi-turn tool use| BED[Sarvam Chat Completions; Bedrock optional]
     BED --> API
     API -->|MCP client over Streamable HTTP| MCP[Market Partner MCP server]
 
@@ -93,7 +93,7 @@ flowchart LR
     API --> UI
 ```
 
-The research graph is invoked through the `research_company` MCP tool. Bedrock Converse is the conversation host: it interprets the user's request, calls the MCP tools, and formats the final short spoken answer and supporting cards. The Bedrock conversation host and the analyst graph are separate on purpose: the conversation layer handles user intent and tool selection; the research graph handles the controlled evidence workflow. Bedrock Converse supports multi-turn conversation and client-side tool use. [4]
+The research graph is invoked through the `research_company` MCP tool. The current local configuration uses Sarvam Chat Completions for conversation tool selection and the five-role analyst graph; Bedrock remains an optional provider. The conversation layer handles user intent and tool selection, while the graph runs the controlled evidence workflow. Both return short spoken answers while the interface retains the complete evidence cards. Sarvam tool calls are executed through the app's MCP client, and the server reports actual token usage for each research and conversation run.
 
 ## Chosen implementation stack
 
@@ -104,12 +104,12 @@ The research graph is invoked through the `research_company` MCP tool. Bedrock C
 | Application API | Python + FastAPI + Pydantic | Reuses the team's Python familiarity and makes tool contracts explicit. |
 | Agent workflow | LangGraph, with parallel specialist/adversarial nodes and structured outputs | Makes agent roles, state transitions and evidence flow inspectable. |
 | MCP | Official MCP Python SDK, Streamable HTTP transport | Exposes task-level tools through a real protocol endpoint that the browser host calls at runtime. Pin a patched SDK release and verify negotiation against the required protocol version before submission. |
-| Model access | Amazon Bedrock Converse, selected model configured by environment | Keeps the conversation and research calls on one controlled provider; model choice can be changed without changing the graph contract. |
+| Model access | Sarvam Chat Completions (current), with Bedrock as an optional provider | Keeps conversation and research calls on one controlled provider; model choice can be changed without changing the graph contract. |
 | Local persistence | SQLite plus versioned local fixtures | Sufficient for a single-user judging demo, run history, source metadata and expiring order previews. Secrets stay outside the database. |
 | Portfolio adapter | Fixture provider first; SnapTrade only if access is approved | Preserves the complete demo without depending on brokerage authorization. |
 | Paper execution | Upstox sandbox adapter only | Shows a confirmed end-to-end order lifecycle without real money or production order access. |
 
-The first implementation should be one Python service with `/api/chat` and a real `/mcp` Streamable HTTP endpoint, plus the Vite web client. The conversation backend must call tools through its MCP client, even when the MCP server runs in the same local deployment; this keeps the demo honest about protocol use and leaves a clean service boundary. Secrets and provider URLs come from environment configuration. The judge path uses fixtures and does not require AWS or broker credentials; live Bedrock and sandbox paths are configured separately for the recorded team demo.
+The implementation is one Python service with `/api/chat` and a real `/mcp` Streamable HTTP endpoint, plus the Vite web client. The conversation backend calls tools through its MCP client, even when the MCP server runs in the same local deployment; this keeps the demo honest about protocol use and leaves a clean service boundary. Secrets and provider URLs come from environment configuration. The judge path uses fixtures and does not require broker credentials; Sarvam is configured for the recorded team demo, and Bedrock remains optional.
 
 Planned repository layout:
 
@@ -128,7 +128,7 @@ docs/                     architecture, decisions and submission materials
 | Component | Responsibility | Must not do |
 |---|---|---|
 | Browser simulator | Voice/text input, short spoken response, source cards, exposure view, explicit order preview and confirmation. | Imply it is a real Alexa+ device or display unmasked account details. |
-| Conversation backend | Hold a short-lived conversation, use Bedrock Converse to select MCP tools, present tool results and retain selected company/context. | Invent research facts or convert the user's question into an unsolicited trade recommendation. |
+| Conversation backend | Hold a short-lived conversation, use the configured model provider to select MCP tools, present tool results and retain selected company/context. | Invent research facts or convert the user's question into an unsolicited trade recommendation. |
 | MCP server | Provide typed, discoverable tools over Streamable HTTP; validate inputs; call research, account and order services. | Expose live trading tools in this MVP. |
 | Research graph | Run source validation, specialist analysis, bull/bear review and synthesis with typed state. | Emit an unconstrained BUY/HOLD/SELL decision. |
 | Source registry | Store issuer, source type, URL, document date, retrieval time, relevant excerpts and checksum. | Treat a public URL as permission for unrestricted bulk scraping. |
@@ -231,7 +231,7 @@ The order service accepts only `mode=sandbox`; the sandbox URL/credentials are c
 
 - Keep the conversation transcript and selected company in a short-lived session store. Use an opaque `thread_id`; do not put names, account numbers or credentials in graph state.
 - Persist source records and research run IDs so a displayed claim can be reopened. Cache only public/licensed documents and fixture data for the demo.
-- Keep raw broker tokens in environment-backed server secrets. Never send credentials, account numbers or full names to Bedrock, the browser, logs or the Git repository.
+- Keep raw broker tokens in environment-backed server secrets. Never send credentials, account numbers or full names to a model provider, the browser, logs or the Git repository.
 - Give the model only the minimum portfolio summary needed to answer the user's question. Perform totals and exposure calculations in code.
 - Treat retrieved filing text as untrusted data, never as instructions to the agent. Cap document size and source count; each run receives a small, bounded packet.
 - For judges, the fixture mode must work without connecting a real brokerage. The demo video may use masked test data, but no user credentials or private statements should be published.
@@ -278,7 +278,7 @@ The long-term bridge to the original marketsearch work is a versioned thesis jou
 | Account access | Can SnapTrade authorize the team's own Upstox/Zerodha accounts? If not, fixture remains the judging path. | 12 Oct |
 | Paper order | Can the team's Upstox sandbox credentials place and read a sandbox order for the selected instrument? | 12 Oct |
 | Evidence packet | Which one company has enough recent, official disclosures for a balanced case? | 12 Oct |
-| Model runtime | Can Bedrock access be configured and cost-capped for the five-role workflow? Keep a deterministic fixture response for development fallback. | 12 Oct |
+| Model runtime | Can the configured model provider be cost-capped for the five-role workflow? Keep a deterministic fixture response for development fallback. | 12 Oct |
 | Freeze | No new data sources or feature branches after the demo's one-company flow is stable. | 18 Oct |
 
 ## Primary technical and policy references

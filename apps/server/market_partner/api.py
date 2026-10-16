@@ -59,6 +59,7 @@ def create_router(settings: Settings) -> APIRouter:
                 "alerts_in_app": True,
                 "local_paper_orders": True,
                 "bedrock": settings.providers_ready["bedrock"],
+                "sarvam": settings.providers_ready["sarvam"],
                 "upstox_sandbox": settings.providers_ready["upstox_sandbox"],
                 "upstox_instrument_mapping": any(
                     bool(instrument.get("upstox_instrument_token"))

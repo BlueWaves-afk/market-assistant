@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     bedrock_max_tokens: int = 1200
     bedrock_timeout_seconds: float = 25.0
 
+    sarvam_enabled: bool = False
+    sarvam_api_key: SecretStr | None = None
+    sarvam_model_id: str = "sarvam-105b"
+    sarvam_base_url: str = "https://api.sarvam.ai/v1/chat/completions"
+    sarvam_max_tokens: int = 1200
+    sarvam_timeout_seconds: float = 60.0
+
     upstox_sandbox_enabled: bool = False
     upstox_sandbox_verified: bool = False
     upstox_sandbox_base_url: str = "https://sandbox.upstox.com"
@@ -46,6 +53,11 @@ class Settings(BaseSettings):
     def providers_ready(self) -> dict[str, bool]:
         return {
             "bedrock": self.bedrock_enabled and bool(self.bedrock_model_id),
+            "sarvam": (
+                self.sarvam_enabled
+                and self.sarvam_api_key is not None
+                and bool(self.sarvam_api_key.get_secret_value().strip())
+            ),
             "upstox_sandbox": (
                 self.upstox_sandbox_enabled
                 and self.upstox_sandbox_verified

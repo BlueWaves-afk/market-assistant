@@ -104,6 +104,15 @@ class AgentAnalysis(APIModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
+class ModelUsage(APIModel):
+    provider: str
+    model_id: str
+    requests: int = Field(ge=0)
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+
+
 class ResearchRun(APIModel):
     run_id: str
     owner_id: str
@@ -123,6 +132,7 @@ class ResearchRun(APIModel):
     validation_status: Literal["valid", "partial", "rejected"]
     data_mode: DataMode
     disclaimer: str
+    model_usage: ModelUsage | None = None
 
 
 class ResearchRequest(APIModel):
@@ -384,7 +394,8 @@ class ChatResponse(APIModel):
     reply: str
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     data: dict[str, Any] | None = None
-    mode: Literal["fixture_router", "bedrock"]
+    mode: Literal["fixture_router", "bedrock", "sarvam"]
+    model_usage: ModelUsage | None = None
     correlation_id: str
 
 

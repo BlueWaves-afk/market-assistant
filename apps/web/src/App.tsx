@@ -32,7 +32,7 @@ import { api, money, patch, post, prettyDate, remove } from "./lib/api";
 import type { JsonRecord } from "./lib/api";
 
 type Page = "assistant" | "portfolio" | "research" | "discovery" | "monitoring" | "orders" | "connections";
-type Message = { role: "user" | "assistant"; content: string; data?: JsonRecord | null; tool_calls?: JsonRecord[] };
+type Message = { role: "user" | "assistant"; content: string; data?: JsonRecord | null; tool_calls?: JsonRecord[]; model_usage?: JsonRecord | null };
 
 const nav: { id: Page; label: string; icon: typeof Sparkles; group: string }[] = [
   { id: "assistant", label: "Assistant", icon: Sparkles, group: "Workspace" },
@@ -177,6 +177,7 @@ function AssistantPage({ notify }: { notify: (message: string) => void }) {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(true);
   const recognition = useRef<SpeechRecognition | null>(null);
+  const speakingEnabled = useRef(true);
 
   const send = async (text = input) => {
     const message = text.trim();
@@ -187,13 +188,19 @@ function AssistantPage({ notify }: { notify: (message: string) => void }) {
     setSending(true);
     try {
       const result = await post<JsonRecord>("/api/chat", { message, history });
-      const response = { role: "assistant" as const, content: result.reply, data: result.data, tool_calls: result.tool_calls };
+      const response = { role: "assistant" as const, content: result.reply, data: result.data, tool_calls: result.tool_calls, model_usage: result.model_usage };
       setMessages((old) => [...old, response]);
-      if (speaking && "speechSynthesis" in window) {
+      if (speakingEnabled.current && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(result.reply));
+        const utterance = new SpeechSynthesisUtterance(result.reply);
+        utterance.lang = "en-IN";
+        const voices = window.speechSynthesis.getVoices();
+        utterance.voice = voices.find((voice) => voice.lang.toLowerCase() === "en-in")
+          ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("en"))
+          ?? null;
+        window.speechSynthesis.speak(utterance);
       }
-      if (result.mode === "fixture_router") notify("Answered with the local assistant. Connect Bedrock later to enable model-led conversation.");
+      if (result.mode === "fixture_router") notify("Model conversation is off. Enable Sarvam in the local server configuration for agent-led replies.");
     } catch (error) {
       const errorText = error instanceof Error ? error.message : "The assistant could not complete that request.";
       setMessages((old) => [...old, { role: "assistant", content: errorText }]);
@@ -219,36 +226,55 @@ function AssistantPage({ notify }: { notify: (message: string) => void }) {
     instance.interimResults = false;
     instance.onresult = (event) => {
       const transcript = event.results[0]?.[0]?.transcript ?? "";
-      setInput(transcript);
+      if (transcript.trim()) void send(transcript);
     };
     instance.onerror = () => { setListening(false); notify("Speech input stopped. You can type your request instead."); };
     instance.onend = () => setListening(false);
     recognition.current = instance;
-    instance.start();
-    setListening(true);
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    try {
+      instance.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+      notify("Could not start the microphone. Check browser permission and try again.");
+    }
   };
+
+  const toggleSpeaking = () => {
+    const enabled = !speakingEnabled.current;
+    speakingEnabled.current = enabled;
+    if (!enabled && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    setSpeaking(enabled);
+  };
+
+  useEffect(() => () => {
+    recognition.current?.stop();
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }, []);
 
   return <div className="assistant-layout">
     <div className="assistant-main">
       <PageHeading eyebrow="Your research workspace" title="A clearer way to think it through." copy="Ask a question, examine the evidence, and keep the decision in your hands." />
       <div className="assistant-conversation">
-        <div className="conversation-topline"><div className="assistant-avatar"><Sparkles size={17} /></div><div><strong>Market Partner</strong><span>Evidence-led assistant</span></div><div className="conversation-tools"><span className="connection-tag"><span className="status-led online" /> MCP connected</span><button className="icon-button" onClick={() => setSpeaking(!speaking)} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>{speaking ? <Volume2 size={17} /> : <VolumeX size={17} />}</button></div></div>
+        <div className="conversation-topline"><div className="assistant-avatar"><Sparkles size={17} /></div><div><strong>Market Partner</strong><span>Evidence-led assistant</span></div><div className="conversation-tools"><span className="connection-tag"><span className="status-led online" /> MCP connected</span><button className="icon-button" onClick={toggleSpeaking} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>{speaking ? <Volume2 size={17} /> : <VolumeX size={17} />}</button></div></div>
         <div className="message-list" aria-live="polite">
           {messages.map((message, index) => <div className={`message-row ${message.role}`} key={`${message.role}-${index}`}>
             {message.role === "assistant" && <div className="message-avatar"><Sparkles size={14} /></div>}
             <div className="message-content"><div className="message-bubble">{message.content}</div>
               {message.tool_calls?.length ? <div className="tool-call-note"><Radio size={12} /> MCP tool called: {message.tool_calls.map((call) => call.name).join(", ")}</div> : null}
+              {message.model_usage && <div className="tool-call-note">Sarvam usage: {message.model_usage.requests} requests · {Number(message.model_usage.prompt_tokens).toLocaleString()} input / {Number(message.model_usage.completion_tokens).toLocaleString()} output tokens</div>}
               {message.data && <ChatResult data={message.data} />}
             </div>
           </div>)}
           {sending && <div className="message-row assistant"><div className="message-avatar"><Sparkles size={14} /></div><div className="message-bubble typing"><span /><span /><span /></div></div>}
         </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-          <button type="button" className={`mic-button ${listening ? "listening" : ""}`} onClick={toggleMic} aria-label={listening ? "Stop speech input" : "Start speech input"}>{listening ? <MicOff size={18} /> : <Mic size={18} />}</button>
+          <button type="button" className={`mic-button ${listening ? "listening" : ""}`} onClick={toggleMic} disabled={sending} aria-label={listening ? "Stop speech input" : "Start speech input"}>{listening ? <MicOff size={18} /> : <Mic size={18} />}</button>
           <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={listening ? "Listening…" : "Ask about a company, your sample portfolio, or a screen…"} aria-label="Ask Market Partner" />
           <button className="send-button" disabled={!input.trim() || sending} type="submit" aria-label="Send message"><Send size={17} /></button>
         </form>
-        <div className="composer-foot"><span>Voice is optional. Type is always available.</span><span>Enter to send</span></div>
+        <div className="composer-foot"><span>{listening ? "Listening… your request sends when you finish speaking." : "Tap the mic to speak; your request sends automatically. Typing is always available."}</span><span>English (India)</span></div>
       </div>
       <div className="prompt-suggestions"><span className="suggestion-label">Try asking</span>{[
         "Research NORTHSTAR and show the countercase",
@@ -392,6 +418,7 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
       <Panel className="result-hero"><div className="result-hero-top"><div><div className="eyebrow">Research dossier · {run.instrument_id}</div><h2>{run.company_name}</h2><span className="result-meta">Run {run.run_id.slice(0, 16)} · completed {prettyDate(run.completed_at)}</span></div><DataBadge tone="amber">Synthetic fixture</DataBadge></div><div className="notice notice-amber compact"><ShieldCheck size={16} /><div><strong>Illustrative only</strong><span>{run.disclaimer}</span></div></div>
         <div className="result-two-col"><div className="thesis-card positive"><span className="micro-label">The supported case</span><p>{run.supported_case?.[0]}</p></div><div className="thesis-card caution"><span className="micro-label">The countercase</span><p>{run.countercase?.[0]}</p></div></div>
         <div className="insight-row"><div><span className="micro-label">Where the analyses disagree</span><p>{run.disagreements?.join(" ")}</p></div><div><span className="micro-label">What remains unknown</span><ul>{(run.unknowns ?? []).map((item: string) => <li key={item}>{item}</li>)}</ul></div></div>
+        {run.model_usage && <div className="inline-hint">Sarvam usage · {run.model_usage.requests} requests · {Number(run.model_usage.prompt_tokens).toLocaleString()} input / {Number(run.model_usage.completion_tokens).toLocaleString()} output tokens</div>}
         <div className="result-actions"><Button variant="secondary" onClick={() => void save()} icon={<Plus size={15} />}>Save dossier</Button>{dossiers.length > 0 && <div className="inline-form"><select aria-label="Choose a dossier for comparison" value={savedDossier} onChange={(event) => setSavedDossier(event.target.value)}><option value="">Compare with saved dossier…</option>{dossiers.map((dossier) => <option key={dossier.dossier_id} value={dossier.dossier_id}>{dossier.title} · v{dossier.version}</option>)}</select><Button variant="secondary" onClick={() => void compare()} disabled={!savedDossier}>Compare</Button></div>}</div>
       </Panel>
       {comparison && <Panel><SectionHeading title="Source changes since dossier" detail={comparison.change_summary} /><div className="compare-grid"><CompareCount label="New sources" count={comparison.new_sources?.length ?? 0} tone="green" /><CompareCount label="Unchanged" count={comparison.unchanged_sources?.length ?? 0} tone="gray" /><CompareCount label="No longer present" count={comparison.removed_sources?.length ?? 0} tone="amber" /></div></Panel>}
@@ -618,7 +645,7 @@ function ConnectionsPage({ notify }: { notify: (message: string) => void }) {
       </Panel>
       <Panel><SectionHeading title="Add a sample link" detail="Local demo record only" /><div className="form-stack"><label className="field"><span>Provider label</span><input value={provider} onChange={(event) => setProvider(event.target.value)} /></label><label className="field"><span>Account alias</span><input value={alias} onChange={(event) => setAlias(event.target.value)} /></label><Button onClick={() => void add()} disabled={busy} icon={<Plus size={15} />}>Add simulated account</Button></div><div className="inline-hint">A sample link has no OAuth token, provider account ID, or live portfolio permissions.</div></Panel>
     </div>
-      <Panel><SectionHeading title="Provider readiness" detail="A credential alone does not activate an integration; its capability gate must also be verified." /><div className="provider-readiness"><ProviderStatus name="Amazon Bedrock" detail="Agent and conversation model calls" ready={Boolean(providerState.bedrock)} /><ProviderStatus name="Upstox sandbox" detail="Order submission and status only" ready={Boolean(providerState.upstox_sandbox)} /><ProviderStatus name="SnapTrade" detail="Authorized read-only account data" ready={Boolean(providerState.snaptrade)} /><ProviderStatus name="Email / push" detail="Opt-in alert delivery" ready={false} /></div></Panel>
+      <Panel><SectionHeading title="Provider readiness" detail="Model credentials stay on the local server; brokerage and order integrations remain separately gated." /><div className="provider-readiness"><ProviderStatus name="Sarvam AI" detail="Conversation and multi-agent research" ready={Boolean(providerState.sarvam)} /><ProviderStatus name="Amazon Bedrock" detail="Optional model provider" ready={Boolean(providerState.bedrock)} /><ProviderStatus name="Upstox sandbox" detail="Order submission and status only" ready={Boolean(providerState.upstox_sandbox)} /><ProviderStatus name="SnapTrade" detail="Authorized read-only account data" ready={Boolean(providerState.snaptrade)} /><ProviderStatus name="Email / push" detail="Opt-in alert delivery" ready={false} /></div></Panel>
   </div>;
 }
 

@@ -41,7 +41,12 @@ from market_partner.models import (
     WatchlistEntry,
 )
 from market_partner.repository import Repository
-from market_partner.workflows.research import BedrockResearchModel, ResearchValidationError, create_research_run
+from market_partner.workflows.research import (
+    BedrockResearchModel,
+    ResearchValidationError,
+    SarvamResearchModel,
+    create_research_run,
+)
 
 
 def now_utc() -> datetime:
@@ -254,7 +259,15 @@ class MarketPartnerApplication:
                 424,
             )
         model = None
-        if self.settings.providers_ready["bedrock"]:
+        if self.settings.providers_ready["sarvam"] and self.settings.sarvam_api_key:
+            model = SarvamResearchModel(
+                api_key=self.settings.sarvam_api_key.get_secret_value(),
+                model_id=self.settings.sarvam_model_id,
+                base_url=self.settings.sarvam_base_url,
+                max_tokens=self.settings.sarvam_max_tokens,
+                timeout_seconds=self.settings.sarvam_timeout_seconds,
+            )
+        elif self.settings.providers_ready["bedrock"]:
             model = BedrockResearchModel(
                 region=self.settings.aws_region,
                 model_id=self.settings.bedrock_model_id,

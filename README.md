@@ -105,7 +105,7 @@ flowchart LR
     Upstox --- Change
 ```
 
-This is the **full product target**, not the hackathon delivery promise. The complete PlantUML source is in [`docs/USE_CASES.puml`](docs/USE_CASES.puml). Bedrock is an implementation dependency shown in the [system architecture](docs/ARCHITECTURE.md), not an investor-facing actor in this use-case view.
+This is the **full product target**, not the hackathon delivery promise. The complete PlantUML source is in [`docs/USE_CASES.puml`](docs/USE_CASES.puml). Sarvam is the current model provider, with Bedrock optional; providers appear in the [system architecture](docs/ARCHITECTURE.md), not as investor-facing actors in this use-case view.
 
 ## High-level design (C4)
 
@@ -117,7 +117,7 @@ The diagrams distinguish the full product context from the containers and compon
 flowchart LR
     Investor([Self-directed investor])
     MarketPartner["Market Partner<br/>Voice-led research and portfolio workspace"]
-    Bedrock["Amazon Bedrock Converse<br/>Conversation and analyst model calls"]
+    ModelProvider["Sarvam Chat Completions<br/>Bedrock optional"]
     Sources["Approved information sources<br/>Official NSE/BSE and issuer disclosures; licensed market data optional"]
     BrokerResearch["Broker research provider<br/>Optional, separate integration"]
     SnapTrade["SnapTrade<br/>Optional read-only account data"]
@@ -126,7 +126,7 @@ flowchart LR
     Notifications["Email or push provider<br/>Optional, later phase"]
 
     Investor -->|Voice or text; receives speech and evidence cards| MarketPartner
-    MarketPartner -->|Conversation and research analysis| Bedrock
+    MarketPartner -->|Conversation and research analysis| ModelProvider
     MarketPartner -->|Fetch dated public evidence| Sources
     MarketPartner -.->|Read holdings when authorized| SnapTrade
     MarketPartner -.->|Fetch attributed broker research| BrokerResearch
@@ -150,7 +150,7 @@ flowchart LR
         App -->|Read/write scoped application records| DB
     end
 
-    Bedrock["Amazon Bedrock Converse"]
+    ModelProvider["Sarvam Chat Completions; Bedrock optional"]
     Sources["Official NSE/BSE and issuer sources<br/>Licensed market data optional"]
     SnapTrade["SnapTrade optional read-only API"]
     BrokerFeed["Broker research feed, optional"]
@@ -159,7 +159,7 @@ flowchart LR
     Notifications["Email/push service, optional later"]
 
     Investor -->|Speaks or types| Web
-    App -->|Conversation and graph model calls| Bedrock
+    App -->|Conversation and graph model calls| ModelProvider
     App -->|Dated evidence retrieval| Sources
     App -.->|Authorized holdings read| SnapTrade
     App -.->|Attributed research retrieval| BrokerFeed
@@ -168,7 +168,7 @@ flowchart LR
     App -.->|Send opt-in alert| Notifications
 ```
 
-The conversation host calls its MCP endpoint over Streamable HTTP, including real `initialize`, `tools/list`, and `tools/call` requests. The browser transcribes speech locally and sends text; AWS and brokerage credentials stay on the server.
+The conversation host calls its MCP endpoint over Streamable HTTP, including real `initialize`, `tools/list`, and `tools/call` requests. The browser handles speech recognition and synthesis, then sends recognized text to the backend; model and brokerage credentials stay on the server.
 
 ### Level 3 — Application-service components
 
@@ -176,7 +176,7 @@ The conversation host calls its MCP endpoint over Streamable HTTP, including rea
 flowchart LR
     subgraph App["FastAPI application service"]
         Chat["Conversation API<br/>Session and request handling"]
-        ConverseAdapter["Bedrock Converse adapter<br/>Maps MCP tools to model tools"]
+        ConverseAdapter["Sarvam chat adapter<br/>Maps MCP tools to function calls; Bedrock optional"]
         MCPClient["MCP client<br/>Initialize, list and call"]
         MCPEndpoint["MCP Streamable HTTP endpoint<br/>Tool registry and input validation"]
         ToolRouter["Task tool router"]
@@ -208,13 +208,13 @@ flowchart LR
         Store --> DB
     end
 
-    Bedrock["Amazon Bedrock Converse"]
+    ModelProvider["Sarvam Chat Completions; Bedrock optional"]
     PublicSources["Approved public/company sources"]
     SnapTrade["SnapTrade, when authorized"]
     Upstox["Upstox sandbox only"]
 
-    ConverseAdapter -->|Conversation tool selection and response| Bedrock
-    Research -->|Role-specific analysis and synthesis| Bedrock
+    ConverseAdapter -->|Conversation tool selection and response| ModelProvider
+    Research -->|Role-specific analysis and synthesis| ModelProvider
     Sources -->|Dated source fetch| PublicSources
     Portfolio -.->|Read-only positions| SnapTrade
     Orders -->|Confirmed sandbox order/status| Upstox
@@ -236,7 +236,7 @@ sequenceDiagram
     participant Host as Conversation host
     participant MCPClient as MCP client
     participant MCP as MCP endpoint (/mcp)
-    participant Bedrock as Bedrock Converse
+    participant Model as Sarvam Chat Completions
     participant Graph as LangGraph research workflow
     participant Sources as Approved source providers
     participant Store as SQLite/source registry
@@ -251,8 +251,8 @@ sequenceDiagram
 
     Investor->>Web: Ask about a company and its risks
     Web->>Host: POST /api/chat with transcript and session ID
-    Host->>Bedrock: Converse with user turn and MCP tool definitions
-    Bedrock-->>Host: toolUse(research_company, ticker, question)
+    Host->>Model: Chat completion with user turn and MCP function schemas
+    Model-->>Host: tool_calls(research_company, ticker, question)
     Host->>MCPClient: Invoke research_company
     MCPClient->>MCP: tools/call(research_company)
     MCP->>Graph: Resolve company and start research run
@@ -261,30 +261,30 @@ sequenceDiagram
     Graph->>Store: Save source metadata, hashes and run ID
 
     par Specialist analyses on the same evidence
-        Graph->>Bedrock: Business/financial analysis
-        Bedrock-->>Graph: Structured claims with evidence IDs
+        Graph->>Model: Business/financial analysis
+        Model-->>Graph: Structured claims with evidence IDs
     and
-        Graph->>Bedrock: Governance/industry analysis
-        Bedrock-->>Graph: Structured claims with evidence IDs
+        Graph->>Model: Governance/industry analysis
+        Model-->>Graph: Structured claims with evidence IDs
     end
 
     par Independent adversarial cases
-        Graph->>Bedrock: Bull case from verified packet
-        Bedrock-->>Graph: Supported upside claims
+        Graph->>Model: Bull case from verified packet
+        Model-->>Graph: Supported upside claims
     and
-        Graph->>Bedrock: Bear case from verified packet
-        Bedrock-->>Graph: Counterevidence and failure conditions
+        Graph->>Model: Bear case from verified packet
+        Model-->>Graph: Counterevidence and failure conditions
     end
 
-    Graph->>Bedrock: Synthesize agreement, disagreement and unknowns
-    Bedrock-->>Graph: Structured dossier draft
+    Graph->>Model: Synthesize agreement, disagreement and unknowns
+    Model-->>Graph: Structured dossier draft
     Graph->>Graph: Validate citation IDs, dates and claim types
     Graph->>Store: Persist validated research-run snapshot
     Graph-->>MCP: Dossier, source records and freshness labels
     MCP-->>MCPClient: tools/call result
     MCPClient-->>Host: Structured tool result
-    Host->>Bedrock: Continue with MCP tool result
-    Bedrock-->>Host: Concise response grounded in the dossier
+    Host->>Model: Continue with MCP tool result
+    Model-->>Host: Concise response grounded in the dossier
     Host-->>Web: Spoken text plus source-linked evidence cards
     Web-->>Investor: Answer, bull/bear cases, sources and unknowns
 ```
@@ -302,12 +302,12 @@ sequenceDiagram
     participant Provider as Portfolio provider
     participant SnapTrade as SnapTrade optional
     participant Calc as Exposure calculator
-    participant Bedrock as Bedrock Converse
+    participant Model as Sarvam Chat Completions
 
     Investor->>Web: Ask current holdings and exposure for a company
     Web->>Host: Transcript and session ID
-    Host->>Bedrock: Converse with available task-tool schemas
-    Bedrock-->>Host: toolUse(get_portfolio_exposure, ticker)
+    Host->>Model: Chat completion with available task-tool schemas
+    Model-->>Host: tool_calls(get_portfolio_exposure, ticker)
     Host->>MCPClient: Invoke get_portfolio_exposure
     MCPClient->>MCP: tools/call(get_portfolio_exposure)
     MCP->>Provider: Get portfolio snapshot
@@ -322,8 +322,8 @@ sequenceDiagram
     Calc-->>MCP: Deterministic totals and percentages
     MCP-->>MCPClient: Exposure result with source/mode/freshness labels
     MCPClient-->>Host: Structured tool result
-    Host->>Bedrock: Continue with tool result
-    Bedrock-->>Host: Explain the figures without trade advice
+    Host->>Model: Continue with tool result
+    Model-->>Host: Explain the figures without trade advice
     Host-->>Web: Answer and exposure breakdown
     Web-->>Investor: Display result and fixture/live label
 ```
@@ -336,7 +336,7 @@ sequenceDiagram
     actor Investor
     participant Web as Browser simulator
     participant Host as Conversation host
-    participant Bedrock as Bedrock Converse
+    participant Model as Sarvam Chat Completions
     participant MCPClient as MCP client
     participant MCP as MCP endpoint
     participant Orders as Paper-order service
@@ -346,8 +346,8 @@ sequenceDiagram
 
     Investor->>Web: Provide ticker, side, quantity and limit price
     Web->>Host: Transcript and order details
-    Host->>Bedrock: Converse with order-tool schemas
-    Bedrock-->>Host: toolUse(preview_paper_order, user-supplied fields)
+    Host->>Model: Chat completion with order-tool schemas
+    Model-->>Host: tool_calls(preview_paper_order, user-supplied fields)
     Host->>MCPClient: Invoke preview_paper_order
     MCPClient->>MCP: tools/call(preview_paper_order)
     MCP->>Orders: Validate fields and sandbox-only mode
@@ -474,7 +474,7 @@ The implementation also includes local, clearly labeled versions of the later pr
 
 ## Status
 
-**Implementation status — 10 October 2026.** The repository contains the product target, C4/HLD views, 30 use-case specifications, a fixture-first FastAPI/MCP backend, and a React voice/text simulator. All use-case groups have local paths or explicit unavailable states. Provider access and real-user security gates remain off; see [implementation status](design/IMPLEMENTATION_STATUS.md).
+**Implementation status — 16 October 2026.** The repository contains the product target, C4/HLD views, 30 use-case specifications, a fixture-first FastAPI/MCP backend, and a React spoken/text simulator. Sarvam is configured for assistant tool routing and the multi-agent research workflow; evidence cards remain visible while the assistant speaks a concise answer. Brokerage and real-user security gates remain off; see [implementation status](design/IMPLEMENTATION_STATUS.md).
 
 ## Run locally
 
@@ -499,9 +499,11 @@ Open [http://localhost:5173](http://localhost:5173). The app uses synthetic data
 
 The conversation host connects to the local `/mcp` Streamable HTTP endpoint and performs MCP initialization, tool discovery, and tool calls. The submission baseline pins MCP Python SDK v1.29.0 so the handshake selects protocol `2025-11-25`, as required by the project design.
 
+Sarvam uses the stable `/v1/chat/completions` endpoint. Set `SARVAM_ENABLED=true` and keep the subscription key in the ignored `.env` file. The browser's speech features require microphone permission in a supported browser.
+
 ## Implemented workspace flows
 
-- **Assistant:** optional browser speech recognition/synthesis with an always-available text path; deterministic local intent routing, plus Bedrock Converse and research-agent adapters when configured.
+- **Assistant:** browser push-to-talk automatically submits the recognized English (India) turn, speaks concise replies, and keeps text available. Sarvam handles model-led tool routing and research when enabled; fixture routing remains the offline fallback, and Bedrock is optional.
 - **Portfolio:** fixture holdings, transparent exposure arithmetic, activity records, explicit performance-data gaps, and a separate unavailable state for broker research.
 - **Research:** bounded evidence packet, parallel specialist and bull/bear analysis, constrained synthesis, citation-ID validation, saved dossiers, and source-set comparison.
 - **Discovery:** explicit deterministic screening against a versioned fictional universe.
