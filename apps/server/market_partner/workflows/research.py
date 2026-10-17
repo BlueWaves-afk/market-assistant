@@ -141,70 +141,79 @@ def _normalize_analysis(
     }
 
 
+def _analyze_validated(
+    model: ResearchModel | None, role: str, question: str, sources: list[SourceRecord]
+) -> dict[str, Any]:
+    valid_excerpt_ids = {
+        excerpt["excerpt_id"] for source in sources for excerpt in source.excerpts
+    }
+    source_texts = [excerpt["text"] for source in sources for excerpt in source.excerpts]
+    if model is None:
+        return _normalize_analysis(
+            _fixture_analysis(role, sources), role, valid_excerpt_ids, source_texts
+        )
+
+    analysis = model.analyze(role, question, sources)
+    try:
+        return _normalize_analysis(analysis, role, valid_excerpt_ids, source_texts)
+    except ResearchValidationError:
+        # Provider output is untrusted. Give it one chance to repair a rejected shape or
+        # citation, while preserving the same deterministic validation before use.
+        retry_question = (
+            f"{question}\n\nYour previous answer failed deterministic evidence or policy checks. "
+            "Retry once as concise JSON with the required keys. Cite only supplied excerpt IDs, "
+            "do not add unsupported numbers, and do not give buy, sell, or hold advice."
+        )
+        retried_analysis = model.analyze(role, retry_question, sources)
+        return _normalize_analysis(retried_analysis, role, valid_excerpt_ids, source_texts)
+
+
 def build_research_graph():
     """Build a bounded graph with parallel analysts and an independent bull/bear pass."""
 
     def specialist(role: str):
         def node(state: ResearchState) -> dict[str, Any]:
-            model = state.get("model")
-            analysis = (
-                model.analyze(role, state["question"], state["sources"])
-                if model is not None
-                else _fixture_analysis(role, state["sources"])
-            )
-            valid_ids = {
-                excerpt["excerpt_id"]
-                for source in state["sources"]
-                for excerpt in source.excerpts
+            return {
+                "result": _analyze_validated(
+                    state.get("model"), role, state["question"], state["sources"]
+                )
             }
-            source_texts = [excerpt["text"] for source in state["sources"] for excerpt in source.excerpts]
-            return {"result": _normalize_analysis(analysis, role, valid_ids, source_texts)}
 
         return node
 
     def business_node(state: ResearchState) -> dict[str, Any]:
-        model = state.get("model")
-        value = (
-            model.analyze("business_financial_analyst", state["question"], state["sources"])
-            if model is not None
-            else _fixture_analysis("business_financial_analyst", state["sources"])
-        )
-        valid_ids = {e["excerpt_id"] for s in state["sources"] for e in s.excerpts}
-        source_texts = [e["text"] for s in state["sources"] for e in s.excerpts]
-        return {"business": _normalize_analysis(value, "business_financial_analyst", valid_ids, source_texts)}
+        return {
+            "business": _analyze_validated(
+                state.get("model"),
+                "business_financial_analyst",
+                state["question"],
+                state["sources"],
+            )
+        }
 
     def governance_node(state: ResearchState) -> dict[str, Any]:
-        model = state.get("model")
-        value = (
-            model.analyze("governance_industry_analyst", state["question"], state["sources"])
-            if model is not None
-            else _fixture_analysis("governance_industry_analyst", state["sources"])
-        )
-        valid_ids = {e["excerpt_id"] for s in state["sources"] for e in s.excerpts}
-        source_texts = [e["text"] for s in state["sources"] for e in s.excerpts]
-        return {"governance": _normalize_analysis(value, "governance_industry_analyst", valid_ids, source_texts)}
+        return {
+            "governance": _analyze_validated(
+                state.get("model"),
+                "governance_industry_analyst",
+                state["question"],
+                state["sources"],
+            )
+        }
 
     def bull_node(state: ResearchState) -> dict[str, Any]:
-        model = state.get("model")
-        value = (
-            model.analyze("bull_case", state["question"], state["sources"])
-            if model is not None
-            else _fixture_analysis("bull_case", state["sources"])
-        )
-        valid_ids = {e["excerpt_id"] for s in state["sources"] for e in s.excerpts}
-        source_texts = [e["text"] for s in state["sources"] for e in s.excerpts]
-        return {"bull": _normalize_analysis(value, "bull_case", valid_ids, source_texts)}
+        return {
+            "bull": _analyze_validated(
+                state.get("model"), "bull_case", state["question"], state["sources"]
+            )
+        }
 
     def bear_node(state: ResearchState) -> dict[str, Any]:
-        model = state.get("model")
-        value = (
-            model.analyze("bear_case", state["question"], state["sources"])
-            if model is not None
-            else _fixture_analysis("bear_case", state["sources"])
-        )
-        valid_ids = {e["excerpt_id"] for s in state["sources"] for e in s.excerpts}
-        source_texts = [e["text"] for s in state["sources"] for e in s.excerpts]
-        return {"bear": _normalize_analysis(value, "bear_case", valid_ids, source_texts)}
+        return {
+            "bear": _analyze_validated(
+                state.get("model"), "bear_case", state["question"], state["sources"]
+            )
+        }
 
     def synthesize(state: ResearchState) -> dict[str, Any]:
         sources = state["sources"]
@@ -221,7 +230,6 @@ def build_research_graph():
                         as_of=source.published_at,
                     )
                 )
-        model = state.get("model")
         synthesis_prompt = (
             state["question"]
             + "\nIndependent bull analysis: "
@@ -231,20 +239,9 @@ def build_research_graph():
             + "\nSpecialist summaries: "
             + json.dumps([state["business"], state["governance"]], ensure_ascii=False)
         )
-        synthesis = (
-            model.analyze("synthesizer", synthesis_prompt, sources)
-            if model is not None
-            else {
-                "role": "synthesizer",
-                "summary": "Both cases are conditional on evidence the synthetic packet does not establish; preserve the disagreement and verify the primary sources.",
-                "claim_ids": [excerpt["excerpt_id"] for source in sources for excerpt in source.excerpts],
-                "counterpoints": [],
-                "open_questions": ["Which source updates would resolve the commissioning and customer-concentration questions?"],
-            }
+        synthesis = _analyze_validated(
+            state.get("model"), "synthesizer", synthesis_prompt, sources
         )
-        valid_ids = {e["excerpt_id"] for s in sources for e in s.excerpts}
-        source_texts = [e["text"] for s in sources for e in s.excerpts]
-        synthesis = _normalize_analysis(synthesis, "synthesizer", valid_ids, source_texts)
         analyses = [state["business"], state["governance"], state["bull"], state["bear"], synthesis]
         has_fixture = any(s.license_or_access_class == "synthetic_demo_data" for s in sources)
         supported = [state["bull"]["summary"]]
