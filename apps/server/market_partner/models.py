@@ -55,6 +55,7 @@ class PortfolioSnapshot(APIModel):
 class ExposureMetric(APIModel):
     label: str
     amount_minor: int | None
+    amount_inr: str  # formatted rupee string; amount_minor ÷ 100 (100 paise = ₹1)
     currency: str
     percent: Decimal | None = None
     denominator_minor: int | None = None
@@ -67,6 +68,7 @@ class ExposureMetric(APIModel):
 class PortfolioResponse(APIModel):
     snapshot: PortfolioSnapshot
     invested_holdings_value_minor: int | None
+    invested_holdings_value_inr: str  # formatted rupee string; invested_holdings_value_minor ÷ 100 (100 paise = ₹1)
     metrics: list[ExposureMetric]
     summary: str
 
