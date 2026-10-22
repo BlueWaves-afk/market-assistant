@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
@@ -137,6 +138,15 @@ class MarketPartnerApplication:
             if normalized in {instrument["symbol"].upper(), instrument["company_name"].upper()}
             or normalized in instrument["company_name"].upper()
         ]
+        if not candidates:
+            collapsed_term = re.sub(r"[^A-Z0-9]", "", normalized)
+            if collapsed_term:
+                candidates = [
+                    instrument
+                    for instrument in self.instruments
+                    if collapsed_term == re.sub(r"[^A-Z0-9]", "", instrument["symbol"].upper())
+                    or collapsed_term in re.sub(r"[^A-Z0-9]", "", instrument["company_name"].upper())
+                ]
         if len(candidates) != 1:
             if candidates:
                 raise DomainError("ambiguous_instrument", "Choose one exact demo security symbol.", 422)
