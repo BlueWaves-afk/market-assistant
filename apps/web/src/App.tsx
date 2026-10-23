@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, Suspense, lazy } from "react";
 import {
   Activity,
-  AlertCircle,
   ArrowDownLeft,
   ArrowRight,
   Bell,
@@ -25,6 +24,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   Sun,
   Volume2,
   VolumeX,
@@ -41,12 +41,21 @@ import {
 } from "./components/PortfolioCharts";
 import {
   BrandMark,
-  VoiceWaveform,
+  SiriVoiceOrb,
   VoiceStatusBadge,
   ThinkingBubble,
+  VoiceSettingsModal,
   AgentActivityTrace,
   type VoiceState,
 } from "./components/VoiceActivityComponents";
+import {
+  loadVoiceSettings,
+  saveVoiceSettings,
+  formatTextForSpeech,
+  getPrioritizedVoices,
+  resolveVoice,
+  type VoiceSettings,
+} from "./lib/speech";
 
 const MarketNetwork3D = lazy(() => import("./components/MarketNetwork3D"));
 
@@ -249,6 +258,9 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
   const [voiceErrorMessage, setVoiceErrorMessage] = useState("");
   const [audioLevels, setAudioLevels] = useState<number[]>([0.15, 0.2, 0.15, 0.3, 0.2, 0.25, 0.15]);
   const [speaking, setSpeaking] = useState(true);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoiceSettings);
+  const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const recognition = useRef<SpeechRecognition | null>(null);
   const speakingEnabled = useRef(true);
@@ -256,6 +268,44 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animFrameRef = useRef<number | null>(null);
+
+  // Load and subscribe to browser speech synthesis voices
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const updateVoices = () => {
+      const list = getPrioritizedVoices();
+      setAvailableVoices(list);
+    };
+    updateVoices();
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+    return () => {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
+  const handleUpdateSettings = (newSettings: VoiceSettings) => {
+    setVoiceSettings(newSettings);
+    saveVoiceSettings(newSettings);
+  };
+
+  const previewVoice = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const sample = "Market Partner voice ready. I can summarize portfolio exposure and bounded research.";
+    const utterance = new SpeechSynthesisUtterance(sample);
+    utterance.rate = voiceSettings.rate;
+    utterance.pitch = voiceSettings.pitch;
+    const activeVoice = resolveVoice(availableVoices, voiceSettings.voiceURI);
+    if (activeVoice) {
+      utterance.voice = activeVoice;
+      utterance.lang = activeVoice.lang;
+    } else {
+      utterance.lang = "en-IN";
+    }
+    window.speechSynthesis.speak(utterance);
+  };
 
   const stopAudioCapture = () => {
     if (animFrameRef.current) {
@@ -277,6 +327,10 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
   const send = async (text = input) => {
     const message = text.trim();
     if (!message || sending) return;
+
+    // Immediately halt any in-progress speech playback
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
     const history = messages.filter((item) => item.role === "user" || item.role === "assistant").slice(-12).map(({ role, content }) => ({ role, content }));
     setMessages((old) => [...old, { role: "user", content: message }]);
     setInput("");
@@ -290,18 +344,27 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
 
       if (speakingEnabled.current && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(result.reply);
-        utterance.lang = "en-IN";
-        const voices = window.speechSynthesis.getVoices();
-        utterance.voice = voices.find((voice) => voice.lang.toLowerCase() === "en-in")
-          ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("en"))
-          ?? null;
+        const spokenText = formatTextForSpeech(result.reply, voiceSettings.conciseSpeech);
+        if (spokenText.trim()) {
+          const utterance = new SpeechSynthesisUtterance(spokenText);
+          utterance.rate = voiceSettings.rate;
+          utterance.pitch = voiceSettings.pitch;
+          const activeVoice = resolveVoice(availableVoices, voiceSettings.voiceURI);
+          if (activeVoice) {
+            utterance.voice = activeVoice;
+            utterance.lang = activeVoice.lang;
+          } else {
+            utterance.lang = "en-IN";
+          }
 
-        utterance.onstart = () => setVoiceState("speaking");
-        utterance.onend = () => setVoiceState("ready");
-        utterance.onerror = () => setVoiceState("ready");
+          utterance.onstart = () => setVoiceState("speaking");
+          utterance.onend = () => setVoiceState("ready");
+          utterance.onerror = () => setVoiceState("ready");
 
-        window.speechSynthesis.speak(utterance);
+          window.speechSynthesis.speak(utterance);
+        } else {
+          setVoiceState("ready");
+        }
       } else {
         setVoiceState("ready");
       }
@@ -317,6 +380,13 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
   };
 
   const toggleMic = async () => {
+    // Immediate interruption: if assistant is currently speaking, stop playback immediately
+    if (voiceState === "speaking") {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      setVoiceState("ready");
+      return;
+    }
+
     if (voiceState === "listening") {
       recognition.current?.stop();
       stopAudioCapture();
@@ -438,30 +508,20 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
   return <div className="assistant-layout alexa-assistant">
     <div className="assistant-main">
       <div className="voice-stage">
-        <button
-          type="button"
-          className={`voice-orb ${voiceState === "listening" ? "is-listening" : ""} ${voiceState === "processing" ? "is-thinking" : ""} ${voiceState === "speaking" ? "is-speaking" : ""} ${voiceState === "error" ? "is-error" : ""}`}
+        <SiriVoiceOrb
+          state={voiceState}
+          audioLevels={audioLevels}
           onClick={toggleMic}
           disabled={sending}
-          aria-label={voiceState === "listening" ? "Stop listening" : "Start a voice conversation"}
-        >
-          <span className="voice-orb-halo" />
-          <span className="voice-orb-core">
-            {voiceState === "listening" || voiceState === "speaking" ? (
-              <VoiceWaveform state={voiceState} audioLevels={audioLevels} />
-            ) : voiceState === "processing" ? (
-              <LoaderCircle className="spin" size={20} />
-            ) : voiceState === "error" ? (
-              <AlertCircle size={20} />
-            ) : (
-              <Mic size={20} />
-            )}
-          </span>
-        </button>
+        />
         <div className="voice-stage-copy">
           <div className="voice-stage-topline">
             <div className="eyebrow">Market Partner · voice + touch</div>
-            <VoiceStatusBadge state={voiceState} errorMessage={voiceErrorMessage} />
+            <VoiceStatusBadge
+              state={voiceState}
+              errorMessage={voiceErrorMessage}
+              onRetry={toggleMic}
+            />
           </div>
           <h1>
             {voiceState === "listening"
@@ -479,6 +539,8 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
               ? "Speak your request — transcript will be evaluated on completion."
               : voiceState === "processing"
               ? "Cross-referencing verified holdings and research packets."
+              : voiceState === "speaking"
+              ? "Listening paused during voice playback. Click the orb to interrupt."
               : voiceState === "error"
               ? voiceErrorMessage || "Check browser microphone settings or type below."
               : "Research a company, understand portfolio exposure, or rehearse a paper order."}
@@ -499,7 +561,20 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
           <div><strong>Market Partner</strong><span>Conversation · sample workspace</span></div>
           <div className="conversation-tools">
             <span className="connection-tag"><span className="status-led online" /> Ready</span>
-            <button className="icon-button" onClick={toggleSpeaking} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>
+            <button
+              className="icon-button"
+              onClick={() => setVoiceSettingsOpen(true)}
+              aria-label="Voice & Speech Settings"
+              title="Voice & Speech Settings"
+            >
+              <SlidersHorizontal size={15} />
+            </button>
+            <button
+              className="icon-button"
+              onClick={toggleSpeaking}
+              aria-label={speaking ? "Mute voice response" : "Enable voice response"}
+              title={speaking ? "Mute voice response" : "Enable voice response"}
+            >
               {speaking ? <Volume2 size={18} /> : <VolumeX size={18} />}
             </button>
           </div>
@@ -554,6 +629,14 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
       <div className="aside-card alexa-environment-card"><div className="eyebrow">Current workspace</div><h2>Sample data, clear limits.</h2><div className="environment-stat"><span>Company universe</span><strong>4 fictional stocks</strong></div><div className="environment-stat"><span>Research packet</span><strong>1 company</strong></div><div className="environment-stat"><span>Order path</span><strong>Paper simulator</strong></div><div className="stock-data-note"><ShieldCheck size={15} /> Quotes are unavailable; you enter the limit price.</div></div>
       <div className="aside-card alexa-guidance-card"><div className="welcome-spark"><BrandMark size={20} /></div><div className="eyebrow">Evidence before action</div><h3>See both sides.<br />Keep your agency.</h3><p>Research shows the strongest case, the countercase, sources, and open questions. Orders always need your on-screen confirmation.</p><div className="mini-rule" /><div className="welcome-foot"><ShieldCheck size={16} /> No personalized trade advice</div></div>
     </aside>
+    <VoiceSettingsModal
+      open={voiceSettingsOpen}
+      onClose={() => setVoiceSettingsOpen(false)}
+      settings={voiceSettings}
+      onUpdateSettings={handleUpdateSettings}
+      voices={availableVoices}
+      onPreviewVoice={previewVoice}
+    />
   </div>;
 }
 
@@ -660,14 +743,14 @@ function PortfolioPage({ notify }: { notify: (message: string) => void }) {
         <Panel>
           <SectionHeading title="Current positions" detail="Grouped by instrument · amount shown in INR" />
           <div className="table-wrap">
-            <table>
+            <table className="portfolio-table">
               <thead>
                 <tr>
-                  <th>Security</th>
-                  <th>Account</th>
-                  <th style={{ textAlign: "right" }}>Quantity</th>
-                  <th style={{ textAlign: "right" }}>Market value</th>
-                  <th style={{ textAlign: "right" }}>As of</th>
+                  <th style={{ width: "32%", minWidth: 160 }}>Security</th>
+                  <th style={{ width: "22%", minWidth: 120 }}>Account</th>
+                  <th style={{ width: "14%", minWidth: 80, textAlign: "right" }}>Quantity</th>
+                  <th style={{ width: "18%", minWidth: 120, textAlign: "right" }}>Market value</th>
+                  <th style={{ width: "14%", minWidth: 110, textAlign: "right" }}>As of</th>
                 </tr>
               </thead>
               <tbody>
@@ -681,15 +764,15 @@ function PortfolioPage({ notify }: { notify: (message: string) => void }) {
                       <div className="table-secondary">{position.company_name}</div>
                     </td>
                     <td>{position.account_alias}</td>
-                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right" }}>{position.quantity}</td>
-                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right", fontWeight: 600 }}>
+                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{position.quantity}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
                       {position.market_value_minor != null ? (
                         money(position.market_value_minor)
                       ) : (
                         <span className="data-badge badge-amber">Missing value</span>
                       )}
                     </td>
-                    <td style={{ textAlign: "right" }}>
+                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                       {position.valuation_as_of ? prettyDate(position.valuation_as_of) : <span className="text-amber">Unavailable</span>}
                     </td>
                   </tr>
@@ -715,7 +798,15 @@ function PortfolioPage({ notify }: { notify: (message: string) => void }) {
 }
 
 function MetricCard({ label, value, detail, icon, tone = "green" }: { label: string; value: string; detail: string; icon: React.ReactNode; tone?: "green" | "amber" }) {
-  return <div className="metric-card"><div className={`metric-icon ${tone === "amber" ? "metric-amber" : ""}`}>{icon}</div><span className="metric-label">{label}</span><strong className="metric-value">{value}</strong><span className="metric-detail">{detail}</span></div>;
+  const isNumeric = /[\d₹]/.test(value);
+  return (
+    <div className="metric-card">
+      <div className={`metric-icon ${tone === "amber" ? "metric-amber" : ""}`}>{icon}</div>
+      <span className="metric-label">{label}</span>
+      <strong className={`metric-value ${!isNumeric ? "text-val" : ""}`}>{value}</strong>
+      <span className="metric-detail">{detail}</span>
+    </div>
+  );
 }
 
 function ResearchPage({ notify }: { notify: (message: string) => void }) {
@@ -1015,15 +1106,15 @@ function OrdersPage({ notify, initialSymbol }: { notify: (message: string) => vo
     <Panel><SectionHeading title="Paper-order history" detail="Local simulation and verified sandbox status; live brokerage orders are unavailable." action={<Button variant="secondary" onClick={() => void refresh()} icon={<RefreshCw size={14} />}>Refresh status</Button>} />
       {orders.length ? (
         <div className="table-wrap">
-          <table>
+          <table className="orders-table">
             <thead>
               <tr>
-                <th>Security</th>
-                <th>Side / Quantity</th>
-                <th style={{ textAlign: "right" }}>Limit Price</th>
-                <th>Status</th>
-                <th style={{ textAlign: "right" }}>Last Checked</th>
-                <th style={{ textAlign: "right" }}>Actions</th>
+                <th style={{ width: "26%", minWidth: 140 }}>Security</th>
+                <th style={{ width: "18%", minWidth: 110 }}>Side / Quantity</th>
+                <th style={{ width: "16%", minWidth: 100, textAlign: "right" }}>Limit Price</th>
+                <th style={{ width: "16%", minWidth: 110 }}>Status</th>
+                <th style={{ width: "14%", minWidth: 100, textAlign: "right" }}>Last Checked</th>
+                <th style={{ width: "10%", minWidth: 90, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>

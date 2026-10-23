@@ -145,7 +145,7 @@ export function PortfolioAllocationChart({ overview }: { overview: JsonRecord })
       maintainAspectRatio: false,
       cutout: "70%",
       animation: {
-        duration: 500,
+        duration: typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 400,
         easing: "easeOutQuart",
       },
       plugins: {
@@ -160,6 +160,9 @@ export function PortfolioAllocationChart({ overview }: { overview: JsonRecord })
           borderWidth: 1,
           padding: 12,
           boxPadding: 6,
+          cornerRadius: 6,
+          titleFont: { size: 12, weight: "bold", family: "Inter, sans-serif" },
+          bodyFont: { size: 11, family: "Inter, sans-serif" },
           usePointStyle: true,
           callbacks: {
             label: (context) => {
@@ -230,7 +233,7 @@ export function PortfolioAllocationChart({ overview }: { overview: JsonRecord })
       </div>
 
       <div className="chart-donut-container">
-        <div className="chart-canvas-wrapper" style={{ height: 220, position: "relative" }}>
+        <div className="chart-canvas-wrapper" style={{ height: 170, width: 170, minWidth: 150, maxWidth: 170, position: "relative" }}>
           <canvas ref={canvasRef} aria-label="Portfolio asset allocation donut chart" role="img" />
           <div className="donut-center-stat">
             <span className="donut-stat-label">Valued Total</span>
@@ -250,14 +253,14 @@ export function PortfolioAllocationChart({ overview }: { overview: JsonRecord })
               <div key={pos.symbol} className="legend-row">
                 <div className="legend-info">
                   <span className="legend-dot" style={{ backgroundColor: color }} />
-                  <div>
+                  <div className="legend-text-col">
                     <strong className="legend-symbol">{pos.symbol}</strong>
-                    <span className="legend-name">{pos.company_name?.split(" ")[0]}</span>
+                    <span className="legend-name">{pos.company_name?.split("(")[0]?.trim()}</span>
                   </div>
                 </div>
                 <div className="legend-figures">
                   <span className="legend-val">{money(pos.market_value_minor)}</span>
-                  <span className="legend-pct">{pct}%</span>
+                  <span className="legend-pct">{pct}% of valued</span>
                 </div>
               </div>
             );
@@ -267,13 +270,14 @@ export function PortfolioAllocationChart({ overview }: { overview: JsonRecord })
             <div key={pos.symbol} className="legend-row unvalued-row" title="Valuation is unavailable in sample fixtures">
               <div className="legend-info">
                 <span className="legend-dot dot-amber" />
-                <div>
+                <div className="legend-text-col">
                   <strong className="legend-symbol">{pos.symbol}</strong>
-                  <span className="legend-name">{pos.quantity} shares</span>
+                  <span className="legend-name">{pos.company_name?.split("(")[0]?.trim()}</span>
                 </div>
               </div>
               <div className="legend-figures">
-                <span className="data-badge badge-amber">Valuation Missing</span>
+                <span className="legend-val">{pos.quantity} shares</span>
+                <span className="data-badge badge-amber" style={{ fontSize: "9.5px", padding: "1px 5px" }}>Valuation Missing</span>
               </div>
             </div>
           ))}
@@ -325,7 +329,9 @@ export function HoldingsComparisonChart({ overview }: { overview: JsonRecord }) 
       return valB - valA;
     });
 
-    const labels = sorted.map((p) => p.symbol);
+    const labels = sorted.map((p) =>
+      p.market_value_minor != null ? p.symbol : `${p.symbol} (Unvalued)`
+    );
     const dataValues = sorted.map((p) => (p.market_value_minor != null ? Number(p.market_value_minor) / 100 : 0));
     const bgColors = sorted.map((p, i) =>
       p.market_value_minor != null ? colors.slices[i % colors.slices.length] : colors.unvaluedColor
@@ -352,7 +358,7 @@ export function HoldingsComparisonChart({ overview }: { overview: JsonRecord }) 
       maintainAspectRatio: false,
       indexAxis: "y", // Horizontal bars for great readability on all screen widths
       animation: {
-        duration: 500,
+        duration: typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 400,
         easing: "easeOutQuart",
       },
       plugins: {
@@ -364,6 +370,10 @@ export function HoldingsComparisonChart({ overview }: { overview: JsonRecord }) 
           borderColor: colors.tooltipBorder,
           borderWidth: 1,
           padding: 12,
+          boxPadding: 6,
+          cornerRadius: 6,
+          titleFont: { size: 12, weight: "bold", family: "Inter, sans-serif" },
+          bodyFont: { size: 11, family: "Inter, sans-serif" },
           callbacks: {
             title: (items) => {
               const pos = sorted[items[0].dataIndex];

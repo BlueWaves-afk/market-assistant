@@ -122,6 +122,109 @@ function isWebGLAvailable(): boolean {
   }
 }
 
+function createNodeLabelSprite(
+  node: NodeData,
+  isSelected: boolean
+): {
+  sprite: THREE.Sprite;
+  texture: THREE.CanvasTexture;
+  updateSelection: (selected: boolean) => void;
+} {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    const dummy = new THREE.Sprite();
+    return {
+      sprite: dummy,
+      texture: new THREE.CanvasTexture(canvas),
+      updateSelection: () => {},
+    };
+  }
+
+  const scale = 2;
+  const isPrimary = node.type === "stock" || node.type === "hub";
+  const fontSize = (isPrimary ? 13 : 11) * scale;
+  const paddingX = 10 * scale;
+  const paddingY = 5 * scale;
+  const dotRadius = (isPrimary ? 3.5 : 2.5) * scale;
+  const dotSpacing = 7 * scale;
+
+  const fontString = `600 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+
+  const renderCanvas = (selected: boolean) => {
+    ctx.font = fontString;
+    const textMetrics = ctx.measureText(node.label);
+    const contentWidth = dotRadius * 2 + dotSpacing + textMetrics.width;
+    const width = Math.ceil(contentWidth + paddingX * 2);
+    const height = Math.ceil(fontSize + paddingY * 2.2);
+
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    } else {
+      ctx.clearRect(0, 0, width, height);
+    }
+
+    ctx.font = fontString;
+    ctx.textBaseline = "middle";
+
+    const radius = 5 * scale;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(1, 1, width - 2, height - 2, radius);
+    } else {
+      ctx.rect(1, 1, width - 2, height - 2);
+    }
+
+    ctx.fillStyle = selected ? "rgba(15, 23, 42, 0.96)" : "rgba(10, 16, 26, 0.88)";
+    ctx.fill();
+
+    ctx.lineWidth = (selected ? 2 : 1) * scale;
+    ctx.strokeStyle = selected ? node.color : "rgba(148, 163, 184, 0.32)";
+    ctx.stroke();
+
+    const dotX = paddingX + dotRadius;
+    const dotY = height / 2;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+    ctx.fillStyle = node.color;
+    ctx.fill();
+
+    ctx.fillStyle = selected ? "#ffffff" : isPrimary ? "#f8fafc" : "#cbd5e1";
+    ctx.fillText(node.label, dotX + dotRadius + dotSpacing, height / 2);
+  };
+
+  renderCanvas(isSelected);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  const sprite = new THREE.Sprite(material);
+  const aspect = canvas.width / canvas.height;
+  const spriteHeight = isPrimary ? 0.42 : 0.34;
+  sprite.scale.set(spriteHeight * aspect, spriteHeight, 1);
+
+  const yOffset = node.size * 0.95 + (isPrimary ? 0.38 : 0.28);
+  sprite.position.set(node.position[0], node.position[1] + yOffset, node.position[2]);
+
+  return {
+    sprite,
+    texture,
+    updateSelection: (selected: boolean) => {
+      renderCanvas(selected);
+      texture.needsUpdate = true;
+    },
+  };
+}
+
 export interface MarketNetwork3DProps {
   position?: "top" | "bottom";
   onTogglePosition?: () => void;
@@ -133,9 +236,18 @@ export default function MarketNetwork3D({
 }: MarketNetwork3DProps = {}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(NODES[0]);
+  const selectedNodeRef = useRef<NodeData | null>(NODES[0]);
   const [isRotating, setIsRotating] = useState(true);
   const [webGLSupported, setWebGLSupported] = useState(true);
   const animFrameRef = useRef<number | null>(null);
+  const labelUpdatersRef = useRef<{ id: string; update: (selected: boolean) => void }[]>([]);
+
+  useEffect(() => {
+    selectedNodeRef.current = selectedNode;
+    labelUpdatersRef.current.forEach(({ id, update }) => {
+      update(id === selectedNode?.id);
+    });
+  }, [selectedNode]);
 
   useEffect(() => {
     if (!isWebGLAvailable()) {
@@ -177,8 +289,11 @@ export default function MarketNetwork3D({
     // 3. Node Meshes & Mapping
     const sphereGeometry = new THREE.SphereGeometry(1, 24, 24);
     const nodeMeshes: { mesh: THREE.Mesh; data: NodeData }[] = [];
-
     const nodePositionsMap = new Map<string, THREE.Vector3>();
+
+    // Sprites & Textures tracking for clean disposal
+    const labelSprites: { sprite: THREE.Sprite; texture: THREE.CanvasTexture; data: NodeData }[] = [];
+    const updaters: { id: string; update: (selected: boolean) => void }[] = [];
 
     NODES.forEach((node) => {
       const position = new THREE.Vector3(...node.position);
@@ -192,6 +307,7 @@ export default function MarketNetwork3D({
       const mesh = new THREE.Mesh(sphereGeometry, material);
       mesh.scale.setScalar(node.size);
       mesh.position.copy(position);
+      mesh.userData = { node };
 
       networkGroup.add(mesh);
       nodeMeshes.push({ mesh, data: node });
@@ -209,7 +325,27 @@ export default function MarketNetwork3D({
         ringMesh.position.copy(position);
         networkGroup.add(ringMesh);
       }
+
+      // Add high-DPI billboard text label sprite directly above node
+      const label = createNodeLabelSprite(node, node.id === selectedNodeRef.current?.id);
+      label.sprite.userData = { node };
+      networkGroup.add(label.sprite);
+      labelSprites.push({ sprite: label.sprite, texture: label.texture, data: node });
+      updaters.push({ id: node.id, update: label.updateSelection });
     });
+
+    labelUpdatersRef.current = updaters;
+
+    // Active Selection Targeting Ring
+    const selectionRingGeo = new THREE.RingGeometry(0.85, 0.98, 36);
+    const selectionRingMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const selectionRing = new THREE.Mesh(selectionRingGeo, selectionRingMat);
+    networkGroup.add(selectionRing);
 
     // 4. Edges
     const lineMaterial = new THREE.LineBasicMaterial({
@@ -230,7 +366,7 @@ export default function MarketNetwork3D({
     });
 
     // 5. Starfield / Constellation Particle Cloud
-    const particleCount = 120;
+    const particleCount = 100;
     const particleGeometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
 
@@ -242,14 +378,14 @@ export default function MarketNetwork3D({
     particleGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     const particleMaterial = new THREE.PointsMaterial({
       color: 0x64748b,
-      size: 0.05,
+      size: 0.045,
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.35,
     });
     const particleCloud = new THREE.Points(particleGeometry, particleMaterial);
     scene.add(particleCloud);
 
-    // 6. Interactive Raycasting for Node Hover/Click
+    // 6. Interactive Raycasting for Node / Label Click
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -259,11 +395,15 @@ export default function MarketNetwork3D({
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(nodeMeshes.map((n) => n.mesh));
+      const targets = [
+        ...nodeMeshes.map((n) => n.mesh),
+        ...labelSprites.map((l) => l.sprite),
+      ];
+      const intersects = raycaster.intersectObjects(targets);
       if (intersects.length > 0) {
-        const hit = nodeMeshes.find((n) => n.mesh === intersects[0].object);
-        if (hit) {
-          setSelectedNode(hit.data);
+        const hitData = (intersects[0].object.userData?.node as NodeData) || null;
+        if (hitData) {
+          setSelectedNode(hitData);
         }
       }
     };
@@ -319,10 +459,23 @@ export default function MarketNetwork3D({
 
       if (isVisible) {
         if (isRotating && !isDragging) {
-          networkGroup.rotation.y += 0.0025;
-          networkGroup.rotation.x = Math.sin(Date.now() * 0.0005) * 0.15;
-          particleCloud.rotation.y -= 0.0005;
+          networkGroup.rotation.y += 0.0022;
+          networkGroup.rotation.x = Math.sin(Date.now() * 0.0005) * 0.12;
+          particleCloud.rotation.y -= 0.0004;
         }
+
+        // Update targeting selection ring
+        const currentSelected = selectedNodeRef.current;
+        if (currentSelected) {
+          selectionRing.visible = true;
+          selectionRing.position.set(...currentSelected.position);
+          selectionRing.scale.setScalar(currentSelected.size * 1.52);
+          selectionRing.rotation.z += 0.015;
+          (selectionRing.material as THREE.MeshBasicMaterial).color.set(currentSelected.color);
+        } else {
+          selectionRing.visible = false;
+        }
+
         renderer.render(scene, camera);
       }
     };
@@ -351,9 +504,17 @@ export default function MarketNetwork3D({
       if (container && renderer.domElement) {
         container.removeChild(renderer.domElement);
       }
+      labelSprites.forEach(({ sprite, texture }) => {
+        texture.dispose();
+        (sprite.material as THREE.SpriteMaterial).dispose();
+      });
       renderer.dispose();
       sphereGeometry.dispose();
+      selectionRingGeo.dispose();
+      selectionRingMat.dispose();
       lineMaterial.dispose();
+      particleGeometry.dispose();
+      particleMaterial.dispose();
     };
   }, [isRotating]);
 
@@ -363,11 +524,11 @@ export default function MarketNetwork3D({
         <div className="network-title-group">
           <div className="network-badge">
             <Sparkles size={14} className="text-accent" />
-            <span>Illustrative 3D WebGL</span>
+            <span>Interactive 3D WebGL</span>
           </div>
           <h3 className="network-title">Market Network & Relational Topology</h3>
           <p className="network-subtitle">
-            3D relational graph connecting sample instruments to sectors and the market core. Drag to rotate.
+            Relational topology connecting sample instruments to sectors and market core with dynamic labels. Drag to rotate.
           </p>
         </div>
 
@@ -436,6 +597,9 @@ export default function MarketNetwork3D({
               <div className="node-hud-title">
                 <strong>{selectedNode.label}</strong>
                 <span className="data-badge badge-gray">{selectedNode.type.toUpperCase()}</span>
+                {selectedNode.id === "maplebio" && (
+                  <span className="data-badge badge-amber">Unvalued</span>
+                )}
               </div>
               <span className="node-hud-desc">{selectedNode.details}</span>
             </div>
@@ -445,21 +609,45 @@ export default function MarketNetwork3D({
 
       <div className="network-footer">
         <div className="network-legend">
-          <span className="legend-chip">
-            <span className="chip-dot" style={{ backgroundColor: "#10b981" }} /> Core Hub
-          </span>
-          <span className="legend-chip">
-            <span className="chip-dot" style={{ backgroundColor: "#06b6d4" }} /> Securities
-          </span>
-          <span className="legend-chip">
-            <span className="chip-dot" style={{ backgroundColor: "#8b5cf6" }} /> Sectors
-          </span>
-          <span className="legend-chip">
-            <span className="chip-dot" style={{ backgroundColor: "#f59e0b" }} /> Unvalued
-          </span>
+          <button
+            type="button"
+            className={`legend-chip interactive ${selectedNode?.id === "hub" ? "active" : ""}`}
+            onClick={() => setSelectedNode(NODES[0])}
+            title="Click to select Core Hub"
+          >
+            <span className="chip-dot chip-ring" style={{ borderColor: "#10b981", backgroundColor: "transparent" }} />
+            <span>Core Hub</span>
+          </button>
+          <button
+            type="button"
+            className={`legend-chip interactive ${selectedNode?.type === "stock" && selectedNode?.id !== "maplebio" ? "active" : ""}`}
+            onClick={() => setSelectedNode(NODES[1])}
+            title="Click to select Tracked Securities"
+          >
+            <span className="chip-dot" style={{ backgroundColor: "#06b6d4" }} />
+            <span>Tracked Securities</span>
+          </button>
+          <button
+            type="button"
+            className={`legend-chip interactive ${selectedNode?.type === "sector" ? "active" : ""}`}
+            onClick={() => setSelectedNode(NODES[5])}
+            title="Click to select Sector Clusters"
+          >
+            <span className="chip-dot" style={{ backgroundColor: "#8b5cf6" }} />
+            <span>Sectors</span>
+          </button>
+          <button
+            type="button"
+            className={`legend-chip interactive ${selectedNode?.id === "maplebio" ? "active" : ""}`}
+            onClick={() => setSelectedNode(NODES[4])}
+            title="Click to select Unvalued Fixture"
+          >
+            <span className="chip-dot" style={{ backgroundColor: "#f59e0b" }} />
+            <span>Unvalued Fixture</span>
+          </button>
         </div>
         <div className="network-hint">
-          Click any node or drag to inspect Euclidean market clustering
+          Click any node or label to inspect topology
         </div>
       </div>
     </div>

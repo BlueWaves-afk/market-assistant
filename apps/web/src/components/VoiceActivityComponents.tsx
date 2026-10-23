@@ -9,9 +9,14 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldCheck,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+  Play,
+  Check,
 } from "lucide-react";
 import { prettyDate, type JsonRecord } from "../lib/api";
-
+import { type VoiceSettings } from "../lib/speech";
 import logoAsset from "../assets/logo.png";
 
 export type VoiceState = "ready" | "listening" | "processing" | "speaking" | "error";
@@ -64,11 +69,11 @@ export function VoiceWaveform({
           let heightPct = 15;
           if (state === "listening") {
             // Level is 0.0 to 1.0 from AnalyserNode
-            heightPct = Math.max(12, Math.min(100, Math.round(level * 100)));
+            heightPct = Math.max(14, Math.min(100, Math.round(level * 100)));
           } else if (state === "speaking") {
             // Restrained rhythmic wave for audio playback
-            const phase = (idx * 0.4);
-            heightPct = Math.round(20 + 35 * Math.abs(Math.sin(phase)));
+            const phase = idx * 0.45;
+            heightPct = Math.round(22 + 40 * Math.abs(Math.sin(phase)));
           } else if (state === "processing") {
             heightPct = 25;
           } else if (state === "error") {
@@ -91,36 +96,117 @@ export function VoiceWaveform({
 }
 
 /**
+ * Siri-Inspired Fluid Animated Voice Orb
+ * Multi-layer chromatic aura with organic audio-driven responsiveness,
+ * subtle idle respiration, orbital processing rotation, and full reduced-motion support.
+ */
+export function SiriVoiceOrb({
+  state,
+  audioLevels = [0.15, 0.2, 0.15, 0.3, 0.2, 0.25, 0.15],
+  onClick,
+  disabled = false,
+}: {
+  state: VoiceState;
+  audioLevels?: number[];
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const avgLevel =
+    audioLevels.length > 0
+      ? audioLevels.reduce((sum, val) => sum + val, 0) / audioLevels.length
+      : 0.2;
+  const dynamicHaloScale = state === "listening" ? Math.min(1.38, 0.98 + avgLevel * 0.5) : 1;
+  const dynamicHaloOpacity = state === "listening" ? Math.min(0.95, 0.45 + avgLevel * 0.6) : 0.65;
+
+  return (
+    <button
+      type="button"
+      className={`siri-orb state-${state} ${disabled ? "is-disabled" : ""}`}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={
+        state === "listening"
+          ? "Stop listening"
+          : state === "speaking"
+          ? "Stop voice response"
+          : state === "processing"
+          ? "Processing your request"
+          : state === "error"
+          ? "Retry microphone access"
+          : "Start voice conversation"
+      }
+      title={
+        state === "listening"
+          ? "Click to stop listening and evaluate request"
+          : state === "speaking"
+          ? "Click to interrupt voice playback"
+          : state === "error"
+          ? "Click to retry microphone"
+          : "Click to talk with Market Partner"
+      }
+    >
+      {/* Outer ambient chromatic diffusion */}
+      <span
+        className="siri-orb-ambient"
+        style={{
+          transform: `scale(${dynamicHaloScale})`,
+          opacity: dynamicHaloOpacity,
+        }}
+      />
+
+      {/* Layered fluid chromatic mesh rings */}
+      <span className="siri-orb-ring ring-primary" />
+      <span className="siri-orb-ring ring-secondary" />
+
+      {/* Glassmorphic Core */}
+      <span className="siri-orb-core">
+        {state === "listening" || state === "speaking" ? (
+          <VoiceWaveform state={state} audioLevels={audioLevels} />
+        ) : state === "processing" ? (
+          <span className="siri-orb-spinner" />
+        ) : state === "error" ? (
+          <AlertCircle size={20} className="siri-orb-error-icon" />
+        ) : (
+          <Mic size={20} className="siri-orb-mic-icon" />
+        )}
+      </span>
+    </button>
+  );
+}
+
+/**
  * Voice Stage Status Badge
- * Communicates system state with accessible, institutional clarity.
+ * Communicates system state with accessible, institutional clarity and inline retry action.
  */
 export function VoiceStatusBadge({
   state,
   errorMessage,
+  onRetry,
 }: {
   state: VoiceState;
   errorMessage?: string;
+  onRetry?: () => void;
 }) {
   switch (state) {
     case "listening":
       return (
         <span className="voice-status-pill listening">
           <span className="live-dot" />
-          <span>Listening to your voice…</span>
+          <span>Listening… Speak your prompt</span>
         </span>
       );
     case "processing":
       return (
         <span className="voice-status-pill processing">
           <span className="processing-pulse" />
-          <span>Processing transcript & querying tools…</span>
+          <span>Processing transcript & evaluating tools…</span>
         </span>
       );
     case "speaking":
       return (
         <span className="voice-status-pill speaking">
           <Volume2 size={13} />
-          <span>Audio response playing</span>
+          <span>Audio response playing · Click orb to interrupt</span>
         </span>
       );
     case "error":
@@ -128,6 +214,16 @@ export function VoiceStatusBadge({
         <span className="voice-status-pill error">
           <AlertCircle size={13} />
           <span>{errorMessage || "Microphone access unavailable"}</span>
+          {onRetry && (
+            <button
+              type="button"
+              className="retry-pill-btn"
+              onClick={onRetry}
+              title="Retry microphone initialization"
+            >
+              <RotateCcw size={11} /> Retry
+            </button>
+          )}
         </span>
       );
     case "ready":
@@ -163,6 +259,154 @@ export function ThinkingBubble() {
             <span />
             <span />
             <span />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Compact Voice & Speech Settings Modal / Popover
+ * Allows customizing browser voice, speech rate, and concise audio summaries.
+ */
+export function VoiceSettingsModal({
+  open,
+  onClose,
+  settings,
+  onUpdateSettings,
+  voices,
+  onPreviewVoice,
+}: {
+  open: boolean;
+  onClose: () => void;
+  settings: VoiceSettings;
+  onUpdateSettings: (newSettings: VoiceSettings) => void;
+  voices: SpeechSynthesisVoice[];
+  onPreviewVoice: () => void;
+}) {
+  if (!open) return null;
+
+  const indianVoices = voices.filter((v) => v.lang.toLowerCase().replace("_", "-") === "en-in");
+  const otherEnglishVoices = voices.filter(
+    (v) => v.lang.toLowerCase().replace("_", "-") !== "en-in"
+  );
+
+  return (
+    <div className="voice-settings-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="voice-settings-card" onClick={(e) => e.stopPropagation()}>
+        <div className="voice-settings-head">
+          <div className="voice-settings-title-group">
+            <SlidersHorizontal size={15} className="text-accent" />
+            <strong>Voice & Speech Synthesis</strong>
+          </div>
+          <button
+            type="button"
+            className="icon-button close-btn"
+            onClick={onClose}
+            aria-label="Close voice settings"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="voice-settings-body">
+          {/* Voice Selector */}
+          <div className="setting-row">
+            <label className="setting-label" htmlFor="voice-select">
+              <span>Text-to-Speech Voice</span>
+              <span className="setting-hint">English (India) recommended</span>
+            </label>
+            <select
+              id="voice-select"
+              className="voice-select-input"
+              value={settings.voiceURI}
+              onChange={(e) => onUpdateSettings({ ...settings, voiceURI: e.target.value })}
+            >
+              {indianVoices.length > 0 && (
+                <optgroup label="English (India) — Recommended">
+                  {indianVoices.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {otherEnglishVoices.length > 0 && (
+                <optgroup label="Other Available Voices">
+                  {otherEnglishVoices.map((v) => (
+                    <option key={v.voiceURI} value={v.voiceURI}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {voices.length === 0 && <option value="">Default System Voice</option>}
+            </select>
+          </div>
+
+          {/* Speech Rate Slider */}
+          <div className="setting-row">
+            <div className="setting-label-row">
+              <label htmlFor="rate-slider">Speech Rate</label>
+              <span className="setting-value-badge">{settings.rate.toFixed(2)}x</span>
+            </div>
+            <input
+              id="rate-slider"
+              type="range"
+              min="0.75"
+              max="1.35"
+              step="0.05"
+              value={settings.rate}
+              onChange={(e) => onUpdateSettings({ ...settings, rate: parseFloat(e.target.value) })}
+              className="setting-slider"
+            />
+            <div className="slider-ticks">
+              <span>0.75x (Deliberate)</span>
+              <span>1.0x (Normal)</span>
+              <span>1.35x (Fast)</span>
+            </div>
+          </div>
+
+          {/* Concise Summaries Toggle */}
+          <div className="setting-row toggle-row">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={settings.conciseSpeech}
+                onChange={(e) =>
+                  onUpdateSettings({ ...settings, conciseSpeech: e.target.checked })
+                }
+              />
+              <div>
+                <strong>Concise spoken summaries</strong>
+                <p>
+                  Speaks direct answers & key metrics clearly; full structured dossier stays in chat.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          {/* Action Row */}
+          <div className="voice-settings-actions">
+            <button
+              type="button"
+              className="btn btn-secondary preview-voice-btn"
+              onClick={onPreviewVoice}
+            >
+              <Play size={13} /> Test Voice Preview
+            </button>
+            <button type="button" className="btn btn-primary" onClick={onClose}>
+              <Check size={13} /> Done
+            </button>
+          </div>
+
+          <div className="voice-settings-footnote">
+            <ShieldCheck size={13} />
+            <span>
+              Runs offline via browser-native SpeechSynthesis. No audio is transmitted to external
+              services.
+            </span>
           </div>
         </div>
       </div>
