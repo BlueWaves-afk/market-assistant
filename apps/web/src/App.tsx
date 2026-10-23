@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, Suspense, lazy } from "react";
 import {
   Activity,
   ArrowDownLeft,
   ArrowRight,
   Bell,
   BookOpenCheck,
+  BotMessageSquare,
   BriefcaseBusiness,
   Check,
   ChevronDown,
@@ -14,15 +15,17 @@ import {
   Gauge,
   Link2,
   LoaderCircle,
+  Menu,
   Mic,
   MicOff,
+  Moon,
   Plus,
-  Radio,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
-  Sparkles,
+  SlidersHorizontal,
+  Sun,
   Volume2,
   VolumeX,
   WalletCards,
@@ -30,12 +33,37 @@ import {
 } from "lucide-react";
 import { api, money, patch, post, prettyDate, remove } from "./lib/api";
 import type { JsonRecord } from "./lib/api";
+import {
+  PortfolioAllocationChart,
+  HoldingsComparisonChart,
+  SectorExposureVisualizer,
+  PerformanceDiagnostic,
+} from "./components/PortfolioCharts";
+import {
+  BrandMark,
+  SiriVoiceOrb,
+  VoiceStatusBadge,
+  ThinkingBubble,
+  VoiceSettingsModal,
+  AgentActivityTrace,
+  type VoiceState,
+} from "./components/VoiceActivityComponents";
+import {
+  loadVoiceSettings,
+  saveVoiceSettings,
+  formatTextForSpeech,
+  getPrioritizedVoices,
+  resolveVoice,
+  type VoiceSettings,
+} from "./lib/speech";
+
+const MarketNetwork3D = lazy(() => import("./components/MarketNetwork3D"));
 
 type Page = "assistant" | "portfolio" | "research" | "discovery" | "monitoring" | "orders" | "connections";
 type Message = { role: "user" | "assistant"; content: string; data?: JsonRecord | null; tool_calls?: JsonRecord[]; model_usage?: JsonRecord | null };
 
-const nav: { id: Page; label: string; icon: typeof Sparkles; group: string }[] = [
-  { id: "assistant", label: "Assistant", icon: Sparkles, group: "Workspace" },
+const nav: { id: Page; label: string; icon: any; group: string }[] = [
+  { id: "assistant", label: "Assistant", icon: BotMessageSquare, group: "Workspace" },
   { id: "portfolio", label: "Portfolio", icon: BriefcaseBusiness, group: "Workspace" },
   { id: "research", label: "Research", icon: BookOpenCheck, group: "Workspace" },
   { id: "discovery", label: "Discovery", icon: Compass, group: "Tools" },
@@ -67,6 +95,23 @@ function App() {
   const [health, setHealth] = useState<JsonRecord | null>(null);
   const [mcpState, setMcpState] = useState<JsonRecord | null>(null);
   const [toast, setToast] = useState("");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    try {
+      const saved = localStorage.getItem("market_partner_theme");
+      if (saved === "light" || saved === "dark") return saved;
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    } catch {
+      return "dark";
+    }
+  });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("market_partner_theme", theme);
+    } catch {}
+  }, [theme]);
 
   useEffect(() => {
     void api<JsonRecord>("/api/health").then(setHealth).catch((error) => setToast(error.message));
@@ -84,25 +129,39 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {mobileNavOpen && (
+        <div
+          className="mobile-backdrop"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
         <div className="brand-lockup">
-          <div className="brand-mark"><Sparkles size={18} strokeWidth={2.3} /></div>
+          <div className="brand-mark"><BrandMark size={24} /></div>
           <div>
             <div className="brand-name">market partner</div>
-            <div className="brand-caption">voice · research · trade</div>
+            <div className="brand-caption">institutional · research · trade</div>
           </div>
         </div>
         <div className="workspace-switcher">
           <div className="avatar">TM</div>
-          <div className="workspace-copy"><strong>Tom’s workspace</strong><span>Local demo</span></div>
-          <ChevronDown size={15} className="muted" />
+          <div className="workspace-copy"><strong>Tom’s workspace</strong><span>Demo investor</span></div>
+          <ChevronDown size={14} className="muted" />
         </div>
         {(["Workspace", "Tools", "Settings"] as const).map((group) => (
           <div className="nav-group" key={group}>
             <div className="nav-group-label">{group}</div>
             {nav.filter((item) => item.group === group).map(({ id, label, icon: Icon }) => (
-              <button className={`nav-item ${page === id ? "active" : ""}`} key={id} onClick={() => setPage(id)}>
-                <Icon size={17} strokeWidth={1.8} /><span>{label}</span>
+              <button
+                className={`nav-item ${page === id ? "active" : ""}`}
+                key={id}
+                onClick={() => {
+                  setPage(id);
+                  setMobileNavOpen(false);
+                }}
+              >
+                <Icon size={16} strokeWidth={1.8} /><span>{label}</span>
                 {id === "monitoring" && <span className="nav-dot" aria-label="New alerts" />}
               </button>
             ))}
@@ -110,18 +169,36 @@ function App() {
         ))}
         <div className="sidebar-bottom">
           <div className="sidebar-status">
-            <div className="status-row"><span className={`status-led ${health?.status === "ok" ? "online" : ""}`} /><span>{health?.status === "ok" ? "Local service connected" : "Connecting to service"}</span></div>
+            <div className="status-row"><span className={`status-led ${health?.status === "ok" ? "online" : ""}`} /><span>{health?.status === "ok" ? "Service connected" : "Connecting…"}</span></div>
             <div className="status-meta">{mcpState?.connected ? `MCP ${mcpState.protocol_version ?? "connected"}` : "MCP checking"}</div>
           </div>
-          <button className="help-link" onClick={() => notify("Market Partner is a local demo with synthetic data. Provider access is disabled until configured.")}><CircleHelp size={16} /> Help & data notes</button>
-          <div className="profile-row"><div className="avatar avatar-small">TM</div><div className="workspace-copy"><strong>Tom Mathew</strong><span>Demo investor</span></div><ChevronDown size={15} /></div>
+          <button className="help-link" onClick={() => notify("Market Partner is a local demo with synthetic data. Provider access is disabled until configured.")}><CircleHelp size={15} /> Help & data notes</button>
+          <div className="profile-row"><div className="avatar avatar-small">TM</div><div className="workspace-copy"><strong>Tom Mathew</strong><span>Demo investor</span></div><ChevronDown size={14} className="muted" /></div>
         </div>
       </aside>
 
       <main className="main-area">
         <header className="topbar">
-          <div className="breadcrumbs"><span>Workspace</span><ArrowRight size={13} /><strong>{title}</strong></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              className="mobile-menu-btn"
+              onClick={() => setMobileNavOpen(!mobileNavOpen)}
+              aria-label="Toggle navigation menu"
+            >
+              {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+            <div className="breadcrumbs"><span>Workspace</span><ArrowRight size={13} /><strong>{title}</strong></div>
+          </div>
           <div className="topbar-actions">
+            <button
+              className="theme-toggle-btn"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+              <span>{theme === "dark" ? "Light" : "Dark"}</span>
+            </button>
             <span className="env-pill"><span className="status-led online" /> Sample workspace</span>
             <span className="demo-warning"><ShieldCheck size={14} /> Synthetic demo data</span>
           </div>
@@ -177,69 +254,237 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceState>("ready");
+  const [voiceErrorMessage, setVoiceErrorMessage] = useState("");
+  const [audioLevels, setAudioLevels] = useState<number[]>([0.15, 0.2, 0.15, 0.3, 0.2, 0.25, 0.15]);
   const [speaking, setSpeaking] = useState(true);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(loadVoiceSettings);
+  const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+
   const recognition = useRef<SpeechRecognition | null>(null);
   const speakingEnabled = useRef(true);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+
+  // Load and subscribe to browser speech synthesis voices
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const updateVoices = () => {
+      const list = getPrioritizedVoices();
+      setAvailableVoices(list);
+    };
+    updateVoices();
+    window.speechSynthesis.onvoiceschanged = updateVoices;
+    return () => {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, []);
+
+  const handleUpdateSettings = (newSettings: VoiceSettings) => {
+    setVoiceSettings(newSettings);
+    saveVoiceSettings(newSettings);
+  };
+
+  const previewVoice = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const sample = "Market Partner voice ready. I can summarize portfolio exposure and bounded research.";
+    const utterance = new SpeechSynthesisUtterance(sample);
+    utterance.rate = voiceSettings.rate;
+    utterance.pitch = voiceSettings.pitch;
+    const activeVoice = resolveVoice(availableVoices, voiceSettings.voiceURI);
+    if (activeVoice) {
+      utterance.voice = activeVoice;
+      utterance.lang = activeVoice.lang;
+    } else {
+      utterance.lang = "en-IN";
+    }
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopAudioCapture = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      void audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    setAudioLevels([0.15, 0.2, 0.15, 0.3, 0.2, 0.25, 0.15]);
+  };
 
   const send = async (text = input) => {
     const message = text.trim();
     if (!message || sending) return;
+
+    // Immediately halt any in-progress speech playback
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
     const history = messages.filter((item) => item.role === "user" || item.role === "assistant").slice(-12).map(({ role, content }) => ({ role, content }));
     setMessages((old) => [...old, { role: "user", content: message }]);
     setInput("");
     setSending(true);
+    setVoiceState("processing");
+
     try {
       const result = await post<JsonRecord>("/api/chat", { message, history });
       const response = { role: "assistant" as const, content: result.reply, data: result.data, tool_calls: result.tool_calls, model_usage: result.model_usage };
       setMessages((old) => [...old, response]);
+
       if (speakingEnabled.current && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(result.reply);
-        utterance.lang = "en-IN";
-        const voices = window.speechSynthesis.getVoices();
-        utterance.voice = voices.find((voice) => voice.lang.toLowerCase() === "en-in")
-          ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("en"))
-          ?? null;
-        window.speechSynthesis.speak(utterance);
+        const spokenText = formatTextForSpeech(result.reply, voiceSettings.conciseSpeech);
+        if (spokenText.trim()) {
+          const utterance = new SpeechSynthesisUtterance(spokenText);
+          utterance.rate = voiceSettings.rate;
+          utterance.pitch = voiceSettings.pitch;
+          const activeVoice = resolveVoice(availableVoices, voiceSettings.voiceURI);
+          if (activeVoice) {
+            utterance.voice = activeVoice;
+            utterance.lang = activeVoice.lang;
+          } else {
+            utterance.lang = "en-IN";
+          }
+
+          utterance.onstart = () => setVoiceState("speaking");
+          utterance.onend = () => setVoiceState("ready");
+          utterance.onerror = () => setVoiceState("ready");
+
+          window.speechSynthesis.speak(utterance);
+        } else {
+          setVoiceState("ready");
+        }
+      } else {
+        setVoiceState("ready");
       }
+
       if (result.mode === "fixture_router") notify("Model conversation is off. Enable Sarvam in the local server configuration for agent-led replies.");
     } catch (error) {
       const errorText = error instanceof Error ? error.message : "The assistant could not complete that request.";
       setMessages((old) => [...old, { role: "assistant", content: errorText }]);
+      setVoiceState("ready");
     } finally {
       setSending(false);
     }
   };
 
-  const toggleMic = () => {
-    if (listening) {
-      recognition.current?.stop();
-      setListening(false);
+  const toggleMic = async () => {
+    // Immediate interruption: if assistant is currently speaking, stop playback immediately
+    if (voiceState === "speaking") {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      setVoiceState("ready");
       return;
     }
+
+    if (voiceState === "listening") {
+      recognition.current?.stop();
+      stopAudioCapture();
+      setVoiceState("ready");
+      return;
+    }
+
+    setVoiceErrorMessage("");
     const Constructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Constructor) {
+      setVoiceState("error");
+      setVoiceErrorMessage("Speech recognition unavailable in this browser.");
       notify("Speech recognition is not available in this browser. You can use the text box instead.");
       return;
     }
+
+    // Capture real audio stream via Web Audio API to drive waveform amplitude
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          audioContextRef.current = ctx;
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 32;
+          analyserRef.current = analyser;
+          const source = ctx.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateLevels = () => {
+            if (!analyserRef.current) return;
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const levels: number[] = [];
+            const step = Math.max(1, Math.floor(dataArray.length / 7));
+            for (let i = 0; i < 7; i++) {
+              const val = dataArray[i * step] || 0;
+              levels.push(Math.max(0.12, Math.min(1.0, val / 255)));
+            }
+            setAudioLevels(levels);
+            animFrameRef.current = requestAnimationFrame(updateLevels);
+          };
+          animFrameRef.current = requestAnimationFrame(updateLevels);
+        }
+      }
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Microphone access blocked. Please allow mic permissions in your browser."
+          : "Microphone unavailable. Check your audio settings or type below.";
+      setVoiceState("error");
+      setVoiceErrorMessage(errorMsg);
+      notify(errorMsg);
+      return;
+    }
+
     const instance = new Constructor();
     instance.lang = "en-IN";
     instance.continuous = false;
-    instance.interimResults = false;
+    instance.interimResults = true;
+
     instance.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript ?? "";
-      if (transcript.trim()) void send(transcript);
+      const result = event.results[0];
+      const transcript = result?.[0]?.transcript ?? "";
+      if (result?.isFinal && transcript.trim()) {
+        stopAudioCapture();
+        void send(transcript);
+      }
     };
-    instance.onerror = () => { setListening(false); notify("Speech input stopped. You can type your request instead."); };
-    instance.onend = () => setListening(false);
+
+    instance.onerror = (event: any) => {
+      stopAudioCapture();
+      if (event.error !== "no-speech") {
+        setVoiceState("error");
+        setVoiceErrorMessage(`Speech recognition error (${event.error}).`);
+        notify(`Speech input stopped (${event.error}). You can type your request instead.`);
+      } else {
+        setVoiceState("ready");
+      }
+    };
+
+    instance.onend = () => {
+      stopAudioCapture();
+      setVoiceState((current) => (current === "listening" ? "ready" : current));
+    };
+
     recognition.current = instance;
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
     try {
       instance.start();
-      setListening(true);
+      setVoiceState("listening");
     } catch {
-      setListening(false);
+      stopAudioCapture();
+      setVoiceState("error");
+      setVoiceErrorMessage("Could not start speech input. Check browser permissions.");
       notify("Could not start the microphone. Check browser permission and try again.");
     }
   };
@@ -249,23 +494,57 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
     speakingEnabled.current = enabled;
     if (!enabled && "speechSynthesis" in window) window.speechSynthesis.cancel();
     setSpeaking(enabled);
+    if (!enabled && voiceState === "speaking") {
+      setVoiceState("ready");
+    }
   };
 
   useEffect(() => () => {
     recognition.current?.stop();
+    stopAudioCapture();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   }, []);
 
   return <div className="assistant-layout alexa-assistant">
     <div className="assistant-main">
       <div className="voice-stage">
-        <button type="button" className={`voice-orb ${listening ? "is-listening" : ""} ${sending ? "is-thinking" : ""}`} onClick={toggleMic} disabled={sending} aria-label={listening ? "Stop listening" : "Start a voice conversation"}>
-          <span className="voice-orb-halo" /><span className="voice-orb-core"><Sparkles size={25} /></span>
-        </button>
+        <SiriVoiceOrb
+          state={voiceState}
+          audioLevels={audioLevels}
+          onClick={toggleMic}
+          disabled={sending}
+        />
         <div className="voice-stage-copy">
-          <div className="eyebrow">Market Partner · voice + touch</div>
-          <h1>{listening ? "I’m listening." : sending ? "Let me look into that." : "What would you like to explore?"}</h1>
-          <p>{listening ? "Finish your request and I’ll send the transcript." : "Research a company, understand portfolio exposure, or rehearse a paper order."}</p>
+          <div className="voice-stage-topline">
+            <div className="eyebrow">Market Partner · voice + touch</div>
+            <VoiceStatusBadge
+              state={voiceState}
+              errorMessage={voiceErrorMessage}
+              onRetry={toggleMic}
+            />
+          </div>
+          <h1>
+            {voiceState === "listening"
+              ? "I’m listening…"
+              : voiceState === "processing"
+              ? "Evaluating evidence & querying tools…"
+              : voiceState === "speaking"
+              ? "Voice response active"
+              : voiceState === "error"
+              ? "Microphone attention needed"
+              : "What would you like to explore?"}
+          </h1>
+          <p>
+            {voiceState === "listening"
+              ? "Speak your request — transcript will be evaluated on completion."
+              : voiceState === "processing"
+              ? "Cross-referencing verified holdings and research packets."
+              : voiceState === "speaking"
+              ? "Listening paused during voice playback. Click the orb to interrupt."
+              : voiceState === "error"
+              ? voiceErrorMessage || "Check browser microphone settings or type below."
+              : "Research a company, understand portfolio exposure, or rehearse a paper order."}
+          </p>
         </div>
       </div>
       <section className="stock-carousel-panel" aria-label="Demo stock list">
@@ -277,24 +556,68 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
         </article>)}</div>
       </section>
       <div className="assistant-conversation">
-        <div className="conversation-topline"><div className="assistant-avatar"><Sparkles size={17} /></div><div><strong>Market Partner</strong><span>Conversation · sample workspace</span></div><div className="conversation-tools"><span className="connection-tag"><span className="status-led online" /> Ready</span><button className="icon-button" onClick={toggleSpeaking} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>{speaking ? <Volume2 size={18} /> : <VolumeX size={18} />}</button></div></div>
+        <div className="conversation-topline">
+          <div className="assistant-avatar"><BrandMark size={16} /></div>
+          <div><strong>Market Partner</strong><span>Conversation · sample workspace</span></div>
+          <div className="conversation-tools">
+            <span className="connection-tag"><span className="status-led online" /> Ready</span>
+            <button
+              className="icon-button"
+              onClick={() => setVoiceSettingsOpen(true)}
+              aria-label="Voice & Speech Settings"
+              title="Voice & Speech Settings"
+            >
+              <SlidersHorizontal size={15} />
+            </button>
+            <button
+              className="icon-button"
+              onClick={toggleSpeaking}
+              aria-label={speaking ? "Mute voice response" : "Enable voice response"}
+              title={speaking ? "Mute voice response" : "Enable voice response"}
+            >
+              {speaking ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            </button>
+          </div>
+        </div>
         <div className="message-list" aria-live="polite">
           {messages.map((message, index) => <div className={`message-row ${message.role}`} key={`${message.role}-${index}`}>
-            {message.role === "assistant" && <div className="message-avatar"><Sparkles size={14} /></div>}
-            <div className="message-content"><div className="message-bubble">{message.content}</div>
-              {message.tool_calls?.length ? <div className="tool-call-note"><Radio size={13} />{message.tool_calls.some((call) => call.name === "preview_paper_order") ? "Paper-order preview prepared" : message.tool_calls.some((call) => call.name === "research_company") ? "Research sources checked" : "Sample portfolio data checked"}</div> : null}
-              {message.model_usage && <details className="usage-details"><summary>Usage details</summary><span>{message.model_usage.requests} assistant steps · {Number(message.model_usage.prompt_tokens).toLocaleString()} input / {Number(message.model_usage.completion_tokens).toLocaleString()} output tokens</span></details>}
+            {message.role === "assistant" && <div className="message-avatar"><BrandMark size={14} /></div>}
+            <div className="message-content">
+              <div className="message-bubble">{message.content}</div>
+              <AgentActivityTrace
+                toolCalls={message.tool_calls}
+                modelUsage={message.model_usage}
+                data={message.data}
+              />
               {message.data && <ChatResult data={message.data} notify={notify} onOpenOrders={onOpenOrders} />}
             </div>
           </div>)}
-          {sending && <div className="message-row assistant"><div className="message-avatar"><Sparkles size={14} /></div><div className="message-content"><div className="message-bubble typing"><span /><span /><span /></div><span className="tool-call-note">Checking the selected sources…</span></div></div>}
+          {sending && <ThinkingBubble />}
         </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-          <button type="button" className={`mic-button ${listening ? "listening" : ""}`} onClick={toggleMic} disabled={sending} aria-label={listening ? "Stop speech input" : "Start speech input"}>{listening ? <MicOff size={18} /> : <Mic size={18} />}</button>
-          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={listening ? "Listening…" : "Ask Market Partner anything…"} aria-label="Ask Market Partner" />
-          <button className="send-button" disabled={!input.trim() || sending} type="submit" aria-label="Send message"><Send size={17} /></button>
+          <button
+            type="button"
+            className={`mic-button ${voiceState === "listening" ? "listening" : ""}`}
+            onClick={toggleMic}
+            disabled={sending}
+            aria-label={voiceState === "listening" ? "Stop speech input" : "Start speech input"}
+          >
+            {voiceState === "listening" ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder={voiceState === "listening" ? "Listening to your voice…" : "Ask Market Partner anything…"}
+            aria-label="Ask Market Partner"
+          />
+          <button className="send-button" disabled={!input.trim() || sending} type="submit" aria-label="Send message">
+            <Send size={17} />
+          </button>
         </form>
-        <div className="composer-foot"><span>{listening ? "Listening · tap the blue mic to stop." : "Tap to talk · your speech is transcribed and sent when you finish."}</span><span>English (India)</span></div>
+        <div className="composer-foot">
+          <span>{voiceState === "listening" ? "Listening · speak clearly or click mic to finish." : "Tap to talk · real audio frequency visualization active."}</span>
+          <span>English (India)</span>
+        </div>
       </div>
       <div className="prompt-suggestions"><span className="suggestion-label">Try saying</span>{[
         "Research NORTHSTAR and show both sides",
@@ -304,8 +627,16 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
     </div>
     <aside className="assistant-aside">
       <div className="aside-card alexa-environment-card"><div className="eyebrow">Current workspace</div><h2>Sample data, clear limits.</h2><div className="environment-stat"><span>Company universe</span><strong>4 fictional stocks</strong></div><div className="environment-stat"><span>Research packet</span><strong>1 company</strong></div><div className="environment-stat"><span>Order path</span><strong>Paper simulator</strong></div><div className="stock-data-note"><ShieldCheck size={15} /> Quotes are unavailable; you enter the limit price.</div></div>
-      <div className="aside-card alexa-guidance-card"><div className="welcome-spark"><Sparkles size={19} /></div><div className="eyebrow">Evidence before action</div><h3>See both sides.<br />Keep your agency.</h3><p>Research shows the strongest case, the countercase, sources, and open questions. Orders always need your on-screen confirmation.</p><div className="mini-rule" /><div className="welcome-foot"><ShieldCheck size={16} /> No personalized trade advice</div></div>
+      <div className="aside-card alexa-guidance-card"><div className="welcome-spark"><BrandMark size={20} /></div><div className="eyebrow">Evidence before action</div><h3>See both sides.<br />Keep your agency.</h3><p>Research shows the strongest case, the countercase, sources, and open questions. Orders always need your on-screen confirmation.</p><div className="mini-rule" /><div className="welcome-foot"><ShieldCheck size={16} /> No personalized trade advice</div></div>
     </aside>
+    <VoiceSettingsModal
+      open={voiceSettingsOpen}
+      onClose={() => setVoiceSettingsOpen(false)}
+      settings={voiceSettings}
+      onUpdateSettings={handleUpdateSettings}
+      voices={availableVoices}
+      onPreviewVoice={previewVoice}
+    />
   </div>;
 }
 
@@ -404,28 +735,61 @@ function PortfolioPage({ notify }: { notify: (message: string) => void }) {
         <MetricCard label="Coverage" value={overview.snapshot.coverage === "partial" ? "Partial" : overview.snapshot.coverage} detail="One sample position has no value" icon={<Gauge size={17} />} tone="amber" />
         <MetricCard label="Account mode" value="Fixture" detail="Two sample accounts · read-only" icon={<ShieldCheck size={17} />} />
       </div>
+      <div className="content-grid half-and-half">
+        <PortfolioAllocationChart overview={overview} />
+        <HoldingsComparisonChart overview={overview} />
+      </div>
       <div className="content-grid two-thirds">
         <Panel>
           <SectionHeading title="Current positions" detail="Grouped by instrument · amount shown in INR" />
-          <div className="table-wrap"><table><thead><tr><th>Security</th><th>Account</th><th>Quantity</th><th>Market value</th><th>As of</th></tr></thead><tbody>
-            {overview.snapshot.positions.map((position: JsonRecord) => <tr key={`${position.account_ref}-${position.symbol}`}><td><div className="table-primary">{position.symbol}</div><div className="table-secondary">{position.company_name}</div></td><td>{position.account_alias}</td><td>{position.quantity}</td><td>{money(position.market_value_minor)}</td><td>{position.valuation_as_of ? prettyDate(position.valuation_as_of) : <span className="text-amber">Missing value</span>}</td></tr>)}
-          </tbody></table></div>
+          <div className="table-wrap">
+            <table className="portfolio-table">
+              <thead>
+                <tr>
+                  <th style={{ width: "32%", minWidth: 160 }}>Security</th>
+                  <th style={{ width: "22%", minWidth: 120 }}>Account</th>
+                  <th style={{ width: "14%", minWidth: 80, textAlign: "right" }}>Quantity</th>
+                  <th style={{ width: "18%", minWidth: 120, textAlign: "right" }}>Market value</th>
+                  <th style={{ width: "14%", minWidth: 110, textAlign: "right" }}>As of</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overview.snapshot.positions.map((position: JsonRecord) => (
+                  <tr key={`${position.account_ref}-${position.symbol}`}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span className="table-primary">{position.symbol}</span>
+                        {position.exchange && <span className="data-badge badge-gray">{position.exchange}</span>}
+                      </div>
+                      <div className="table-secondary">{position.company_name}</div>
+                    </td>
+                    <td>{position.account_alias}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{position.quantity}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                      {position.market_value_minor != null ? (
+                        money(position.market_value_minor)
+                      ) : (
+                        <span className="data-badge badge-amber">Missing value</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {position.valuation_as_of ? prettyDate(position.valuation_as_of) : <span className="text-amber">Unavailable</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="table-footnote"><CircleHelp size={13} /> Missing valuation is unavailable, not zero. This view is not total net worth or buying power.</div>
         </Panel>
-        <Panel>
-          <SectionHeading title="Exposure by sector" detail="Invested holdings exposure" />
-          <div className="exposure-list">{overview.metrics.map((metric: JsonRecord) => <div className="exposure-item" key={metric.label}><div className="exposure-copy"><strong>{metric.label.replace(" invested holdings exposure", "")}</strong><span>{money(metric.amount_minor)}</span></div><div className="exposure-track"><div className="exposure-fill" style={{ width: `${Math.min(metric.percent ?? 0, 100)}%` }} /></div><span className="exposure-percent">{metric.percent == null ? "—" : `${metric.percent}%`}</span></div>)}</div>
-          <div className="aside-note"><CircleHelp size={14} /> Percentages are withheld when the denominator is incomplete.</div>
-        </Panel>
+        <SectorExposureVisualizer overview={overview} />
       </div>
     </>}
     <div className="content-grid two-thirds">
       <Panel><SectionHeading title="Account activity" detail="Synthetic sample records · incomplete fee history" />
         {activities.length ? <div className="activity-list">{activities.map((item) => <div className="activity-item" key={item.activity_id}><div className={`activity-type ${item.activity_type === "BUY" ? "buy" : "sell"}`}><ArrowDownLeft size={15} /></div><div className="activity-copy"><strong>{item.activity_type} {item.instrument_id.split(":")[1]}</strong><span>{prettyDate(item.date)} · {item.account_alias}</span></div><div className="activity-amount">{item.gross_amount_minor ? money(item.gross_amount_minor) : "Amount unavailable"}<span>Fees incomplete</span></div></div>)}</div> : <EmptyState title="No sample activities available" copy="Connect a sample account to see its fixture history." />}
       </Panel>
-      <Panel><SectionHeading title="Performance" detail="Only calculated when all required inputs are present" />
-        <div className="performance-empty"><div className="empty-icon amber-icon"><Gauge size={18} /></div><strong>Return is unavailable</strong><p>{performance?.missing_inputs?.join(", ") ?? "Required historical data is missing."}</p><DataBadge tone="amber">Insufficient data</DataBadge></div>
-      </Panel>
+      <PerformanceDiagnostic performance={performance} />
     </div>
     <Panel><SectionHeading title="Broker-published research" detail="Kept separate from Market Partner analysis" action={<div className="inline-form"><select aria-label="Select demo security" value={symbol} onChange={(event) => setSymbol(event.target.value)}>{demoSymbols.map((item) => <option key={item}>{item}</option>)}</select><Button variant="secondary" onClick={() => void checkBroker()} icon={<Search size={14} />}>Check availability</Button></div>} />
       {broker ? <div className="broker-unavailable"><BookOpenCheck size={17} /><div><strong>Provider not configured</strong><span>{broker.message}</span></div></div> : <div className="inline-hint">Broker-authored analysis will never be replaced with model-generated content.</div>}
@@ -434,7 +798,15 @@ function PortfolioPage({ notify }: { notify: (message: string) => void }) {
 }
 
 function MetricCard({ label, value, detail, icon, tone = "green" }: { label: string; value: string; detail: string; icon: React.ReactNode; tone?: "green" | "amber" }) {
-  return <div className="metric-card"><div className={`metric-icon ${tone === "amber" ? "metric-amber" : ""}`}>{icon}</div><span className="metric-label">{label}</span><strong className="metric-value">{value}</strong><span className="metric-detail">{detail}</span></div>;
+  const isNumeric = /[\d₹]/.test(value);
+  return (
+    <div className="metric-card">
+      <div className={`metric-icon ${tone === "amber" ? "metric-amber" : ""}`}>{icon}</div>
+      <span className="metric-label">{label}</span>
+      <strong className={`metric-value ${!isNumeric ? "text-val" : ""}`}>{value}</strong>
+      <span className="metric-detail">{detail}</span>
+    </div>
+  );
 }
 
 function ResearchPage({ notify }: { notify: (message: string) => void }) {
@@ -445,6 +817,7 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
   const [savedDossier, setSavedDossier] = useState("");
   const [comparison, setComparison] = useState<JsonRecord | null>(null);
   const [loading, setLoading] = useState(false);
+  const [networkPosition, setNetworkPosition] = useState<"top" | "bottom">("bottom");
 
   const loadDossiers = async () => { setDossiers(await api<JsonRecord[]>("/api/dossiers")); };
   useEffect(() => { void loadDossiers().catch((error) => notify(error.message)); }, []);
@@ -467,8 +840,18 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
     catch (error) { notify(error instanceof Error ? error.message : "Could not compare research."); }
   };
 
+  const network3DElement = (
+    <Suspense fallback={<div className="panel loading-panel"><Loading label="Initializing 3D market topology…" /></div>}>
+      <MarketNetwork3D
+        position={networkPosition}
+        onTogglePosition={() => setNetworkPosition((prev) => (prev === "top" ? "bottom" : "top"))}
+      />
+    </Suspense>
+  );
+
   return <div className="page-stack">
     <PageHeading eyebrow="Company research" title="Follow the evidence." copy="One company per run. This local demo has a synthetic source packet for NORTHSTAR; other symbols return an explicit packet-unavailable result." />
+    {networkPosition === "top" && network3DElement}
     <div className="notice notice-amber"><ShieldCheck size={17} /><div><strong>Demo packet is synthetic</strong><span>The current Northstar packet is invented for the UI and agent workflow. It contains no real company disclosures or market data.</span></div></div>
     <Panel className="research-controls"><div className="form-grid">
       <label className="field"><span>Company with a source packet</span><select value={symbol} onChange={(event) => setSymbol(event.target.value)}>{researchSymbols.map((item) => <option value={item} key={item}>{item} · {companyNames[item]}</option>)}</select></label>
@@ -491,6 +874,7 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
       </Panel>
       <Panel><SectionHeading title="Agent work trace" detail="First drafts of the bull and bear analyses are produced independently." /><div className="agent-grid">{run.analyses.map((analysis: JsonRecord) => <details className="agent-card" key={analysis.role}><summary><span className="agent-symbol">{analysis.role === "bull_case" ? "+" : analysis.role === "bear_case" ? "−" : "•"}</span><span><strong>{analysis.role.replaceAll("_", " ")}</strong><small>{analysis.claim_ids?.length ?? 0} cited excerpts</small></span><ChevronDown size={15} /></summary><p>{analysis.summary}</p>{analysis.counterpoints?.map((item: string) => <span className="agent-line" key={item}>Counterpoint · {item}</span>)}{analysis.open_questions?.map((item: string) => <span className="agent-line" key={item}>Open question · {item}</span>)}</details>)}</div></Panel>
     </div>}
+    {networkPosition === "bottom" && network3DElement}
   </div>;
 }
 
@@ -720,7 +1104,83 @@ function OrdersPage({ notify, initialSymbol }: { notify: (message: string) => vo
     {editingOrder && <Panel className="change-preview"><div className="preview-header"><div><div className="eyebrow">Order change draft · no change has been applied</div><h2>Modify {editingOrder.instrument_id.split(":")[1]}</h2></div><DataBadge tone="amber">Local paper only</DataBadge></div><p>Current terms: {editingOrder.quantity} shares at ₹{editingOrder.limit_price}.</p><div className="form-grid order-form"><label className="field"><span>New whole-share quantity</span><input type="number" min="1" step="1" value={changeTerms.quantity} onChange={(event) => setChangeTerms((terms) => ({ ...terms, quantity: event.target.value }))} /></label><label className="field"><span>New limit price (₹)</span><input type="number" min="0.01" step="0.01" value={changeTerms.limit_price} onChange={(event) => setChangeTerms((terms) => ({ ...terms, limit_price: event.target.value }))} /></label></div><div className="order-bottom"><Button variant="secondary" onClick={() => setEditingOrder(null)}>Discard</Button><Button onClick={() => void makeChangePreview(editingOrder, "modify")} disabled={busy}>Review modification</Button></div></Panel>}
     {changePreview && <Panel className="change-preview"><div className="preview-header"><div><div className="eyebrow">Separate confirmation required · expires {prettyDate(changePreview.expires_at)}</div><h2>{changePreview.action === "cancel" ? "Cancel paper order?" : "Modify paper order?"}</h2></div><DataBadge tone="amber">Local paper only</DataBadge></div><p>{changePreview.action === "cancel" ? `Cancel ${changePreview.terms.quantity} shares at ₹${changePreview.terms.limit_price} in the local simulator.` : `Before: ${changePreview.terms.from_quantity} shares at ₹${changePreview.terms.from_limit_price}. After: ${changePreview.terms.quantity} shares at ₹${changePreview.terms.limit_price}.`}</p><div className="confirm-row"><label className="checkbox-label"><input type="checkbox" checked={changeConfirmed} onChange={(event) => setChangeConfirmed(event.target.checked)} /><span>I confirm this exact change to the local paper order.</span></label><Button variant={changePreview.action === "cancel" ? "danger" : "primary"} onClick={() => void confirmChange()} disabled={!changeConfirmed || busy}>Confirm {changePreview.action}</Button></div></Panel>}
     <Panel><SectionHeading title="Paper-order history" detail="Local simulation and verified sandbox status; live brokerage orders are unavailable." action={<Button variant="secondary" onClick={() => void refresh()} icon={<RefreshCw size={14} />}>Refresh status</Button>} />
-      {orders.length ? <div className="table-wrap"><table><thead><tr><th>Security</th><th>Side / quantity</th><th>Limit</th><th>Status</th><th>Last checked</th><th>Actions</th></tr></thead><tbody>{orders.map((order) => <tr key={order.order_id}><td><div className="table-primary">{order.instrument_id.split(":")[1]}</div><div className="table-secondary">{order.mode === "sandbox" ? `Upstox sandbox · ${order.provider_order_id ?? "reconciliation pending"}` : "Local simulation · no exchange order"}</div></td><td>{order.side} {order.quantity}</td><td>{money(Math.round(Number(order.limit_price) * 100))}</td><td><DataBadge tone={order.status.includes("CANCELLED") ? "gray" : order.status.includes("UNKNOWN") ? "amber" : "green"}>{order.status.replaceAll("_", " ")}</DataBadge></td><td>{prettyDate(order.status_as_of)}</td><td><div className="table-action-group"><button className="text-action" onClick={async () => { try { const status = await api<JsonRecord>(`/api/orders/${order.order_id}/status?refresh=true`); notify(`Status: ${status.status} · ${status.mode}`); await refresh(); } catch (error) { notify(error instanceof Error ? error.message : "Status unavailable."); } }}>Status</button>{["ACCEPTED_SIMULATED", "OPEN_SIMULATED"].includes(order.status) && <><button className="text-action" onClick={() => startOrderEdit(order)}>Modify</button><button className="text-action subtle-action" onClick={() => void makeChangePreview(order, "cancel")}>Cancel</button></>}</div></td></tr>)}</tbody></table></div> : <EmptyState title="No paper orders yet" copy="Create and review a preview. It will only enter this local simulator after your separate confirmation." />}
+      {orders.length ? (
+        <div className="table-wrap">
+          <table className="orders-table">
+            <thead>
+              <tr>
+                <th style={{ width: "26%", minWidth: 140 }}>Security</th>
+                <th style={{ width: "18%", minWidth: 110 }}>Side / Quantity</th>
+                <th style={{ width: "16%", minWidth: 100, textAlign: "right" }}>Limit Price</th>
+                <th style={{ width: "16%", minWidth: 110 }}>Status</th>
+                <th style={{ width: "14%", minWidth: 100, textAlign: "right" }}>Last Checked</th>
+                <th style={{ width: "10%", minWidth: 90, textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.order_id}>
+                  <td>
+                    <div className="table-primary">{order.instrument_id.split(":")[1]}</div>
+                    <div className="table-secondary">
+                      {order.mode === "sandbox" ? `Upstox sandbox · ${order.provider_order_id ?? "reconciliation pending"}` : "Local simulation · no exchange order"}
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className={`data-badge ${order.side === "BUY" ? "badge-green" : "badge-amber"}`}>
+                        {order.side}
+                      </span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>
+                        {order.quantity}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: "var(--font-mono)", fontWeight: 600, textAlign: "right" }}>
+                    {money(Math.round(Number(order.limit_price) * 100))}
+                  </td>
+                  <td>
+                    <DataBadge tone={order.status.includes("CANCELLED") ? "gray" : order.status.includes("UNKNOWN") ? "amber" : "green"}>
+                      {order.status.replaceAll("_", " ")}
+                    </DataBadge>
+                  </td>
+                  <td style={{ textAlign: "right" }}>{prettyDate(order.status_as_of)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <div className="table-action-group" style={{ justifyContent: "flex-end" }}>
+                      <button
+                        className="text-action"
+                        onClick={async () => {
+                          try {
+                            const status = await api<JsonRecord>(`/api/orders/${order.order_id}/status?refresh=true`);
+                            notify(`Status: ${status.status} · ${status.mode}`);
+                            await refresh();
+                          } catch (error) {
+                            notify(error instanceof Error ? error.message : "Status unavailable.");
+                          }
+                        }}
+                      >
+                        Status
+                      </button>
+                      {["ACCEPTED_SIMULATED", "OPEN_SIMULATED"].includes(order.status) && (
+                        <>
+                          <button className="text-action" onClick={() => startOrderEdit(order)}>
+                            Modify
+                          </button>
+                          <button className="text-action subtle-action" onClick={() => void makeChangePreview(order, "cancel")}>
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyState title="No paper orders yet" copy="Create and review a preview. It will only enter this local simulator after your separate confirmation." />
+      )}
     </Panel>
   </div>;
 }

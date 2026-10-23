@@ -43,7 +43,14 @@ def research_company(symbol: str, question: str = "Summarize the strongest suppo
 
 @mcp.tool()
 def get_portfolio_exposure(symbol: str | None = None, sector: str | None = None) -> dict[str, Any]:
-    """Read the clearly labeled sample portfolio and calculate descriptive invested-holdings exposure."""
+    """Read the clearly labeled sample portfolio and calculate descriptive invested-holdings exposure.
+
+    Currency fields ending in `_minor` (such as `amount_minor`, `market_value_minor`, and
+    `invested_holdings_value_minor`) are integer paise (100 paise = ₹1). Companion fields
+    ending in `_inr` (such as `amount_inr` and `invested_holdings_value_inr`) contain the
+    same value pre-formatted as a rupee string; use those when quoting amounts to the user.
+    The `summary` field contains a pre-formatted sentence with the correct total in Rupees.
+    """
     return payload(app_service.get_portfolio_exposure(symbol=symbol, sector=sector))
 
 

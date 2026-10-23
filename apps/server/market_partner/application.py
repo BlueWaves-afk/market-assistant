@@ -184,6 +184,13 @@ class MarketPartnerApplication:
         has_incomplete = len(valued) != len(snapshot.positions) or not snapshot.positions
         complete = not has_incomplete
         focus = self.resolve_instrument(symbol) if symbol else None
+
+        def format_inr(minor: int | None) -> str:
+            """Convert integer paise to a formatted rupee string (100 paise = ₹1)."""
+            if minor is None:
+                return "—"
+            return f"₹{Decimal(minor) / 100:,.2f}"
+
         metrics: list[ExposureMetric] = []
         if focus:
             focus_id = self.instrument_id(focus)
@@ -195,6 +202,7 @@ class MarketPartnerApplication:
                 ExposureMetric(
                     label=f"{focus['company_name']} invested holdings exposure",
                     amount_minor=amount,
+                    amount_inr=format_inr(amount),
                     currency=snapshot.currency,
                     percent=percent(amount, denominator) if complete and denominator else None,
                     denominator_minor=denominator if complete else None,
@@ -212,6 +220,7 @@ class MarketPartnerApplication:
                 ExposureMetric(
                     label=f"{sector} invested holdings exposure",
                     amount_minor=amount,
+                    amount_inr=format_inr(amount),
                     currency=snapshot.currency,
                     percent=percent(amount, denominator) if complete and denominator else None,
                     denominator_minor=denominator if complete else None,
@@ -231,6 +240,7 @@ class MarketPartnerApplication:
                     ExposureMetric(
                         label=f"{key} invested holdings exposure",
                         amount_minor=amount,
+                        amount_inr=format_inr(amount),
                         currency=snapshot.currency,
                         percent=percent(amount, denominator) if complete and denominator else None,
                         denominator_minor=denominator if complete else None,
@@ -240,16 +250,35 @@ class MarketPartnerApplication:
                         snapshot_id=snapshot.snapshot_id,
                     )
                 )
-        summary = (
+        portfolio_summary = (
             f"Sample-data snapshot: {len(snapshot.positions)} positions, "
             f"₹{Decimal(denominator) / 100:,.2f} valued holdings. "
             "Percentages are withheld because at least one position is missing valuation data."
             if not complete
             else f"Sample-data snapshot: {len(snapshot.positions)} positions valued at ₹{Decimal(denominator) / 100:,.2f}."
         )
+        if focus:
+            all_matching = [
+                p for p in snapshot.positions if f"{p.exchange}:{p.symbol}:EQ:{p.currency}" == focus_id
+            ]
+            if selected:
+                shares = sum((p.quantity for p in selected), Decimal(0))
+                focus_detail = (
+                    f"{focus['company_name']}: {shares:g} shares valued at ₹{Decimal(amount) / 100:,.2f}."
+                )
+            elif all_matching:
+                shares = sum((p.quantity for p in all_matching), Decimal(0))
+                focus_detail = f"{focus['company_name']}: {shares:g} shares (valuation data missing)."
+            else:
+                focus_detail = f"{focus['company_name']}: no holdings in active sample accounts."
+            summary = f"{focus_detail} {portfolio_summary}"
+        else:
+            summary = portfolio_summary
+        holdings_inr = format_inr(denominator if valued else None)
         return PortfolioResponse(
             snapshot=snapshot,
             invested_holdings_value_minor=denominator if valued else None,
+            invested_holdings_value_inr=holdings_inr,
             metrics=metrics,
             summary=summary,
         )
