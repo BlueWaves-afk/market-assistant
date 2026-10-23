@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { Network, Pause, Play, Sparkles } from "lucide-react";
+import { Network, Pause, Play, Sparkles, ArrowUpDown } from "lucide-react";
 
 interface NodeData {
   id: string;
@@ -122,7 +122,15 @@ function isWebGLAvailable(): boolean {
   }
 }
 
-export default function MarketNetwork3D() {
+export interface MarketNetwork3DProps {
+  position?: "top" | "bottom";
+  onTogglePosition?: () => void;
+}
+
+export default function MarketNetwork3D({
+  position = "bottom",
+  onTogglePosition,
+}: MarketNetwork3DProps = {}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(NODES[0]);
   const [isRotating, setIsRotating] = useState(true);
@@ -364,6 +372,31 @@ export default function MarketNetwork3D() {
         </div>
 
         <div className="network-controls">
+          {onTogglePosition && (
+            <button
+              type="button"
+              className="control-icon-btn position-dock-btn"
+              onClick={onTogglePosition}
+              title={position === "bottom" ? "Dock at Top of page" : "Dock at Bottom of page"}
+              aria-label={position === "bottom" ? "Dock at Top of page" : "Dock at Bottom of page"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                padding: "3px 8px",
+                width: "auto",
+                height: "26px",
+                fontSize: "11px",
+                fontWeight: 500,
+                color: "var(--text-secondary)",
+                borderRadius: "5px",
+                cursor: "pointer",
+              }}
+            >
+              <ArrowUpDown size={12} />
+              <span>{position === "bottom" ? "Dock at Top" : "Dock at Bottom"}</span>
+            </button>
+          )}
           <button
             type="button"
             className="control-icon-btn"

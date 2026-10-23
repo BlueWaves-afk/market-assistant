@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState, Suspense, lazy } from "react";
 import {
   Activity,
+  AlertCircle,
   ArrowDownLeft,
   ArrowRight,
   Bell,
   BookOpenCheck,
+  BotMessageSquare,
   BriefcaseBusiness,
   Check,
   ChevronDown,
@@ -19,12 +21,10 @@ import {
   MicOff,
   Moon,
   Plus,
-  Radio,
   RefreshCw,
   Search,
   Send,
   ShieldCheck,
-  Sparkles,
   Sun,
   Volume2,
   VolumeX,
@@ -39,14 +39,22 @@ import {
   SectorExposureVisualizer,
   PerformanceDiagnostic,
 } from "./components/PortfolioCharts";
+import {
+  BrandMark,
+  VoiceWaveform,
+  VoiceStatusBadge,
+  ThinkingBubble,
+  AgentActivityTrace,
+  type VoiceState,
+} from "./components/VoiceActivityComponents";
 
 const MarketNetwork3D = lazy(() => import("./components/MarketNetwork3D"));
 
 type Page = "assistant" | "portfolio" | "research" | "discovery" | "monitoring" | "orders" | "connections";
 type Message = { role: "user" | "assistant"; content: string; data?: JsonRecord | null; tool_calls?: JsonRecord[]; model_usage?: JsonRecord | null };
 
-const nav: { id: Page; label: string; icon: typeof Sparkles; group: string }[] = [
-  { id: "assistant", label: "Assistant", icon: Sparkles, group: "Workspace" },
+const nav: { id: Page; label: string; icon: any; group: string }[] = [
+  { id: "assistant", label: "Assistant", icon: BotMessageSquare, group: "Workspace" },
   { id: "portfolio", label: "Portfolio", icon: BriefcaseBusiness, group: "Workspace" },
   { id: "research", label: "Research", icon: BookOpenCheck, group: "Workspace" },
   { id: "discovery", label: "Discovery", icon: Compass, group: "Tools" },
@@ -121,7 +129,7 @@ function App() {
       )}
       <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
         <div className="brand-lockup">
-          <div className="brand-mark"><Sparkles size={16} strokeWidth={2.3} /></div>
+          <div className="brand-mark"><BrandMark size={24} /></div>
           <div>
             <div className="brand-name">market partner</div>
             <div className="brand-caption">institutional · research · trade</div>
@@ -237,10 +245,34 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceState>("ready");
+  const [voiceErrorMessage, setVoiceErrorMessage] = useState("");
+  const [audioLevels, setAudioLevels] = useState<number[]>([0.15, 0.2, 0.15, 0.3, 0.2, 0.25, 0.15]);
   const [speaking, setSpeaking] = useState(true);
+
   const recognition = useRef<SpeechRecognition | null>(null);
   const speakingEnabled = useRef(true);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+
+  const stopAudioCapture = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      void audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+    setAudioLevels([0.15, 0.2, 0.15, 0.3, 0.2, 0.25, 0.15]);
+  };
 
   const send = async (text = input) => {
     const message = text.trim();
@@ -249,10 +281,13 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
     setMessages((old) => [...old, { role: "user", content: message }]);
     setInput("");
     setSending(true);
+    setVoiceState("processing");
+
     try {
       const result = await post<JsonRecord>("/api/chat", { message, history });
       const response = { role: "assistant" as const, content: result.reply, data: result.data, tool_calls: result.tool_calls, model_usage: result.model_usage };
       setMessages((old) => [...old, response]);
+
       if (speakingEnabled.current && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(result.reply);
@@ -261,45 +296,125 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
         utterance.voice = voices.find((voice) => voice.lang.toLowerCase() === "en-in")
           ?? voices.find((voice) => voice.lang.toLowerCase().startsWith("en"))
           ?? null;
+
+        utterance.onstart = () => setVoiceState("speaking");
+        utterance.onend = () => setVoiceState("ready");
+        utterance.onerror = () => setVoiceState("ready");
+
         window.speechSynthesis.speak(utterance);
+      } else {
+        setVoiceState("ready");
       }
+
       if (result.mode === "fixture_router") notify("Model conversation is off. Enable Sarvam in the local server configuration for agent-led replies.");
     } catch (error) {
       const errorText = error instanceof Error ? error.message : "The assistant could not complete that request.";
       setMessages((old) => [...old, { role: "assistant", content: errorText }]);
+      setVoiceState("ready");
     } finally {
       setSending(false);
     }
   };
 
-  const toggleMic = () => {
-    if (listening) {
+  const toggleMic = async () => {
+    if (voiceState === "listening") {
       recognition.current?.stop();
-      setListening(false);
+      stopAudioCapture();
+      setVoiceState("ready");
       return;
     }
+
+    setVoiceErrorMessage("");
     const Constructor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!Constructor) {
+      setVoiceState("error");
+      setVoiceErrorMessage("Speech recognition unavailable in this browser.");
       notify("Speech recognition is not available in this browser. You can use the text box instead.");
       return;
     }
+
+    // Capture real audio stream via Web Audio API to drive waveform amplitude
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          audioContextRef.current = ctx;
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 32;
+          analyserRef.current = analyser;
+          const source = ctx.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateLevels = () => {
+            if (!analyserRef.current) return;
+            analyserRef.current.getByteFrequencyData(dataArray);
+            const levels: number[] = [];
+            const step = Math.max(1, Math.floor(dataArray.length / 7));
+            for (let i = 0; i < 7; i++) {
+              const val = dataArray[i * step] || 0;
+              levels.push(Math.max(0.12, Math.min(1.0, val / 255)));
+            }
+            setAudioLevels(levels);
+            animFrameRef.current = requestAnimationFrame(updateLevels);
+          };
+          animFrameRef.current = requestAnimationFrame(updateLevels);
+        }
+      }
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Microphone access blocked. Please allow mic permissions in your browser."
+          : "Microphone unavailable. Check your audio settings or type below.";
+      setVoiceState("error");
+      setVoiceErrorMessage(errorMsg);
+      notify(errorMsg);
+      return;
+    }
+
     const instance = new Constructor();
     instance.lang = "en-IN";
     instance.continuous = false;
-    instance.interimResults = false;
+    instance.interimResults = true;
+
     instance.onresult = (event) => {
-      const transcript = event.results[0]?.[0]?.transcript ?? "";
-      if (transcript.trim()) void send(transcript);
+      const result = event.results[0];
+      const transcript = result?.[0]?.transcript ?? "";
+      if (result?.isFinal && transcript.trim()) {
+        stopAudioCapture();
+        void send(transcript);
+      }
     };
-    instance.onerror = () => { setListening(false); notify("Speech input stopped. You can type your request instead."); };
-    instance.onend = () => setListening(false);
+
+    instance.onerror = (event: any) => {
+      stopAudioCapture();
+      if (event.error !== "no-speech") {
+        setVoiceState("error");
+        setVoiceErrorMessage(`Speech recognition error (${event.error}).`);
+        notify(`Speech input stopped (${event.error}). You can type your request instead.`);
+      } else {
+        setVoiceState("ready");
+      }
+    };
+
+    instance.onend = () => {
+      stopAudioCapture();
+      setVoiceState((current) => (current === "listening" ? "ready" : current));
+    };
+
     recognition.current = instance;
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
     try {
       instance.start();
-      setListening(true);
+      setVoiceState("listening");
     } catch {
-      setListening(false);
+      stopAudioCapture();
+      setVoiceState("error");
+      setVoiceErrorMessage("Could not start speech input. Check browser permissions.");
       notify("Could not start the microphone. Check browser permission and try again.");
     }
   };
@@ -309,23 +424,65 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
     speakingEnabled.current = enabled;
     if (!enabled && "speechSynthesis" in window) window.speechSynthesis.cancel();
     setSpeaking(enabled);
+    if (!enabled && voiceState === "speaking") {
+      setVoiceState("ready");
+    }
   };
 
   useEffect(() => () => {
     recognition.current?.stop();
+    stopAudioCapture();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
   }, []);
 
   return <div className="assistant-layout alexa-assistant">
     <div className="assistant-main">
       <div className="voice-stage">
-        <button type="button" className={`voice-orb ${listening ? "is-listening" : ""} ${sending ? "is-thinking" : ""}`} onClick={toggleMic} disabled={sending} aria-label={listening ? "Stop listening" : "Start a voice conversation"}>
-          <span className="voice-orb-halo" /><span className="voice-orb-core"><Sparkles size={25} /></span>
+        <button
+          type="button"
+          className={`voice-orb ${voiceState === "listening" ? "is-listening" : ""} ${voiceState === "processing" ? "is-thinking" : ""} ${voiceState === "speaking" ? "is-speaking" : ""} ${voiceState === "error" ? "is-error" : ""}`}
+          onClick={toggleMic}
+          disabled={sending}
+          aria-label={voiceState === "listening" ? "Stop listening" : "Start a voice conversation"}
+        >
+          <span className="voice-orb-halo" />
+          <span className="voice-orb-core">
+            {voiceState === "listening" || voiceState === "speaking" ? (
+              <VoiceWaveform state={voiceState} audioLevels={audioLevels} />
+            ) : voiceState === "processing" ? (
+              <LoaderCircle className="spin" size={20} />
+            ) : voiceState === "error" ? (
+              <AlertCircle size={20} />
+            ) : (
+              <Mic size={20} />
+            )}
+          </span>
         </button>
         <div className="voice-stage-copy">
-          <div className="eyebrow">Market Partner · voice + touch</div>
-          <h1>{listening ? "I’m listening." : sending ? "Let me look into that." : "What would you like to explore?"}</h1>
-          <p>{listening ? "Finish your request and I’ll send the transcript." : "Research a company, understand portfolio exposure, or rehearse a paper order."}</p>
+          <div className="voice-stage-topline">
+            <div className="eyebrow">Market Partner · voice + touch</div>
+            <VoiceStatusBadge state={voiceState} errorMessage={voiceErrorMessage} />
+          </div>
+          <h1>
+            {voiceState === "listening"
+              ? "I’m listening…"
+              : voiceState === "processing"
+              ? "Evaluating evidence & querying tools…"
+              : voiceState === "speaking"
+              ? "Voice response active"
+              : voiceState === "error"
+              ? "Microphone attention needed"
+              : "What would you like to explore?"}
+          </h1>
+          <p>
+            {voiceState === "listening"
+              ? "Speak your request — transcript will be evaluated on completion."
+              : voiceState === "processing"
+              ? "Cross-referencing verified holdings and research packets."
+              : voiceState === "error"
+              ? voiceErrorMessage || "Check browser microphone settings or type below."
+              : "Research a company, understand portfolio exposure, or rehearse a paper order."}
+          </p>
         </div>
       </div>
       <section className="stock-carousel-panel" aria-label="Demo stock list">
@@ -337,24 +494,55 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
         </article>)}</div>
       </section>
       <div className="assistant-conversation">
-        <div className="conversation-topline"><div className="assistant-avatar"><Sparkles size={17} /></div><div><strong>Market Partner</strong><span>Conversation · sample workspace</span></div><div className="conversation-tools"><span className="connection-tag"><span className="status-led online" /> Ready</span><button className="icon-button" onClick={toggleSpeaking} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>{speaking ? <Volume2 size={18} /> : <VolumeX size={18} />}</button></div></div>
+        <div className="conversation-topline">
+          <div className="assistant-avatar"><BrandMark size={16} /></div>
+          <div><strong>Market Partner</strong><span>Conversation · sample workspace</span></div>
+          <div className="conversation-tools">
+            <span className="connection-tag"><span className="status-led online" /> Ready</span>
+            <button className="icon-button" onClick={toggleSpeaking} aria-label={speaking ? "Mute voice response" : "Enable voice response"}>
+              {speaking ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            </button>
+          </div>
+        </div>
         <div className="message-list" aria-live="polite">
           {messages.map((message, index) => <div className={`message-row ${message.role}`} key={`${message.role}-${index}`}>
-            {message.role === "assistant" && <div className="message-avatar"><Sparkles size={14} /></div>}
-            <div className="message-content"><div className="message-bubble">{message.content}</div>
-              {message.tool_calls?.length ? <div className="tool-call-note"><Radio size={13} />{message.tool_calls.some((call) => call.name === "preview_paper_order") ? "Paper-order preview prepared" : message.tool_calls.some((call) => call.name === "research_company") ? "Research sources checked" : "Sample portfolio data checked"}</div> : null}
-              {message.model_usage && <details className="usage-details"><summary>Usage details</summary><span>{message.model_usage.requests} assistant steps · {Number(message.model_usage.prompt_tokens).toLocaleString()} input / {Number(message.model_usage.completion_tokens).toLocaleString()} output tokens</span></details>}
+            {message.role === "assistant" && <div className="message-avatar"><BrandMark size={14} /></div>}
+            <div className="message-content">
+              <div className="message-bubble">{message.content}</div>
+              <AgentActivityTrace
+                toolCalls={message.tool_calls}
+                modelUsage={message.model_usage}
+                data={message.data}
+              />
               {message.data && <ChatResult data={message.data} notify={notify} onOpenOrders={onOpenOrders} />}
             </div>
           </div>)}
-          {sending && <div className="message-row assistant"><div className="message-avatar"><Sparkles size={14} /></div><div className="message-content"><div className="message-bubble typing"><span /><span /><span /></div><span className="tool-call-note">Checking the selected sources…</span></div></div>}
+          {sending && <ThinkingBubble />}
         </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-          <button type="button" className={`mic-button ${listening ? "listening" : ""}`} onClick={toggleMic} disabled={sending} aria-label={listening ? "Stop speech input" : "Start speech input"}>{listening ? <MicOff size={18} /> : <Mic size={18} />}</button>
-          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={listening ? "Listening…" : "Ask Market Partner anything…"} aria-label="Ask Market Partner" />
-          <button className="send-button" disabled={!input.trim() || sending} type="submit" aria-label="Send message"><Send size={17} /></button>
+          <button
+            type="button"
+            className={`mic-button ${voiceState === "listening" ? "listening" : ""}`}
+            onClick={toggleMic}
+            disabled={sending}
+            aria-label={voiceState === "listening" ? "Stop speech input" : "Start speech input"}
+          >
+            {voiceState === "listening" ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder={voiceState === "listening" ? "Listening to your voice…" : "Ask Market Partner anything…"}
+            aria-label="Ask Market Partner"
+          />
+          <button className="send-button" disabled={!input.trim() || sending} type="submit" aria-label="Send message">
+            <Send size={17} />
+          </button>
         </form>
-        <div className="composer-foot"><span>{listening ? "Listening · tap the blue mic to stop." : "Tap to talk · your speech is transcribed and sent when you finish."}</span><span>English (India)</span></div>
+        <div className="composer-foot">
+          <span>{voiceState === "listening" ? "Listening · speak clearly or click mic to finish." : "Tap to talk · real audio frequency visualization active."}</span>
+          <span>English (India)</span>
+        </div>
       </div>
       <div className="prompt-suggestions"><span className="suggestion-label">Try saying</span>{[
         "Research NORTHSTAR and show both sides",
@@ -364,7 +552,7 @@ function AssistantPage({ notify, onTradeSymbol, onOpenOrders }: { notify: (messa
     </div>
     <aside className="assistant-aside">
       <div className="aside-card alexa-environment-card"><div className="eyebrow">Current workspace</div><h2>Sample data, clear limits.</h2><div className="environment-stat"><span>Company universe</span><strong>4 fictional stocks</strong></div><div className="environment-stat"><span>Research packet</span><strong>1 company</strong></div><div className="environment-stat"><span>Order path</span><strong>Paper simulator</strong></div><div className="stock-data-note"><ShieldCheck size={15} /> Quotes are unavailable; you enter the limit price.</div></div>
-      <div className="aside-card alexa-guidance-card"><div className="welcome-spark"><Sparkles size={19} /></div><div className="eyebrow">Evidence before action</div><h3>See both sides.<br />Keep your agency.</h3><p>Research shows the strongest case, the countercase, sources, and open questions. Orders always need your on-screen confirmation.</p><div className="mini-rule" /><div className="welcome-foot"><ShieldCheck size={16} /> No personalized trade advice</div></div>
+      <div className="aside-card alexa-guidance-card"><div className="welcome-spark"><BrandMark size={20} /></div><div className="eyebrow">Evidence before action</div><h3>See both sides.<br />Keep your agency.</h3><p>Research shows the strongest case, the countercase, sources, and open questions. Orders always need your on-screen confirmation.</p><div className="mini-rule" /><div className="welcome-foot"><ShieldCheck size={16} /> No personalized trade advice</div></div>
     </aside>
   </div>;
 }
@@ -538,6 +726,7 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
   const [savedDossier, setSavedDossier] = useState("");
   const [comparison, setComparison] = useState<JsonRecord | null>(null);
   const [loading, setLoading] = useState(false);
+  const [networkPosition, setNetworkPosition] = useState<"top" | "bottom">("bottom");
 
   const loadDossiers = async () => { setDossiers(await api<JsonRecord[]>("/api/dossiers")); };
   useEffect(() => { void loadDossiers().catch((error) => notify(error.message)); }, []);
@@ -560,18 +749,24 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
     catch (error) { notify(error instanceof Error ? error.message : "Could not compare research."); }
   };
 
+  const network3DElement = (
+    <Suspense fallback={<div className="panel loading-panel"><Loading label="Initializing 3D market topology…" /></div>}>
+      <MarketNetwork3D
+        position={networkPosition}
+        onTogglePosition={() => setNetworkPosition((prev) => (prev === "top" ? "bottom" : "top"))}
+      />
+    </Suspense>
+  );
+
   return <div className="page-stack">
     <PageHeading eyebrow="Company research" title="Follow the evidence." copy="One company per run. This local demo has a synthetic source packet for NORTHSTAR; other symbols return an explicit packet-unavailable result." />
+    {networkPosition === "top" && network3DElement}
     <div className="notice notice-amber"><ShieldCheck size={17} /><div><strong>Demo packet is synthetic</strong><span>The current Northstar packet is invented for the UI and agent workflow. It contains no real company disclosures or market data.</span></div></div>
     <Panel className="research-controls"><div className="form-grid">
       <label className="field"><span>Company with a source packet</span><select value={symbol} onChange={(event) => setSymbol(event.target.value)}>{researchSymbols.map((item) => <option value={item} key={item}>{item} · {companyNames[item]}</option>)}</select></label>
       <label className="field field-wide"><span>Research question</span><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={500} /></label>
       <div className="field-action"><Button onClick={() => void research()} disabled={loading} icon={loading ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />}>{loading ? "Researching…" : "Run research"}</Button></div>
     </div><div className="form-footnote"><Activity size={13} /> Five bounded roles · two specialists, independent bull/bear, constrained synthesis · citation, policy, and numeric checks</div></Panel>
-
-    <Suspense fallback={<div className="panel loading-panel"><Loading label="Initializing 3D market topology…" /></div>}>
-      <MarketNetwork3D />
-    </Suspense>
 
     {!run && !loading && <Panel><EmptyState title="Your next research run will appear here" copy="Choose a demo security and question. The source packet, dated citations, disagreement, and unknowns will stay attached to the result." /></Panel>}
     {loading && <Panel><Loading label="Running the bounded research workflow" /><div className="workflow-steps"><span className="done">Resolve company</span><span className="done">Validate source packet</span><span className="active">Independent analysis</span><span>Synthesize & check citations</span></div></Panel>}
@@ -588,6 +783,7 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
       </Panel>
       <Panel><SectionHeading title="Agent work trace" detail="First drafts of the bull and bear analyses are produced independently." /><div className="agent-grid">{run.analyses.map((analysis: JsonRecord) => <details className="agent-card" key={analysis.role}><summary><span className="agent-symbol">{analysis.role === "bull_case" ? "+" : analysis.role === "bear_case" ? "−" : "•"}</span><span><strong>{analysis.role.replaceAll("_", " ")}</strong><small>{analysis.claim_ids?.length ?? 0} cited excerpts</small></span><ChevronDown size={15} /></summary><p>{analysis.summary}</p>{analysis.counterpoints?.map((item: string) => <span className="agent-line" key={item}>Counterpoint · {item}</span>)}{analysis.open_questions?.map((item: string) => <span className="agent-line" key={item}>Open question · {item}</span>)}</details>)}</div></Panel>
     </div>}
+    {networkPosition === "bottom" && network3DElement}
   </div>;
 }
 
