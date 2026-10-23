@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, Suspense, lazy } from "react";
 import {
   Activity,
   ArrowDownLeft,
@@ -14,8 +14,10 @@ import {
   Gauge,
   Link2,
   LoaderCircle,
+  Menu,
   Mic,
   MicOff,
+  Moon,
   Plus,
   Radio,
   RefreshCw,
@@ -23,6 +25,7 @@ import {
   Send,
   ShieldCheck,
   Sparkles,
+  Sun,
   Volume2,
   VolumeX,
   WalletCards,
@@ -30,6 +33,14 @@ import {
 } from "lucide-react";
 import { api, money, patch, post, prettyDate, remove } from "./lib/api";
 import type { JsonRecord } from "./lib/api";
+import {
+  PortfolioAllocationChart,
+  HoldingsComparisonChart,
+  SectorExposureVisualizer,
+  PerformanceDiagnostic,
+} from "./components/PortfolioCharts";
+
+const MarketNetwork3D = lazy(() => import("./components/MarketNetwork3D"));
 
 type Page = "assistant" | "portfolio" | "research" | "discovery" | "monitoring" | "orders" | "connections";
 type Message = { role: "user" | "assistant"; content: string; data?: JsonRecord | null; tool_calls?: JsonRecord[]; model_usage?: JsonRecord | null };
@@ -67,6 +78,23 @@ function App() {
   const [health, setHealth] = useState<JsonRecord | null>(null);
   const [mcpState, setMcpState] = useState<JsonRecord | null>(null);
   const [toast, setToast] = useState("");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    try {
+      const saved = localStorage.getItem("market_partner_theme");
+      if (saved === "light" || saved === "dark") return saved;
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    } catch {
+      return "dark";
+    }
+  });
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("market_partner_theme", theme);
+    } catch {}
+  }, [theme]);
 
   useEffect(() => {
     void api<JsonRecord>("/api/health").then(setHealth).catch((error) => setToast(error.message));
@@ -84,25 +112,39 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {mobileNavOpen && (
+        <div
+          className="mobile-backdrop"
+          onClick={() => setMobileNavOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
         <div className="brand-lockup">
-          <div className="brand-mark"><Sparkles size={18} strokeWidth={2.3} /></div>
+          <div className="brand-mark"><Sparkles size={16} strokeWidth={2.3} /></div>
           <div>
             <div className="brand-name">market partner</div>
-            <div className="brand-caption">voice · research · trade</div>
+            <div className="brand-caption">institutional · research · trade</div>
           </div>
         </div>
         <div className="workspace-switcher">
           <div className="avatar">TM</div>
-          <div className="workspace-copy"><strong>Tom’s workspace</strong><span>Local demo</span></div>
-          <ChevronDown size={15} className="muted" />
+          <div className="workspace-copy"><strong>Tom’s workspace</strong><span>Demo investor</span></div>
+          <ChevronDown size={14} className="muted" />
         </div>
         {(["Workspace", "Tools", "Settings"] as const).map((group) => (
           <div className="nav-group" key={group}>
             <div className="nav-group-label">{group}</div>
             {nav.filter((item) => item.group === group).map(({ id, label, icon: Icon }) => (
-              <button className={`nav-item ${page === id ? "active" : ""}`} key={id} onClick={() => setPage(id)}>
-                <Icon size={17} strokeWidth={1.8} /><span>{label}</span>
+              <button
+                className={`nav-item ${page === id ? "active" : ""}`}
+                key={id}
+                onClick={() => {
+                  setPage(id);
+                  setMobileNavOpen(false);
+                }}
+              >
+                <Icon size={16} strokeWidth={1.8} /><span>{label}</span>
                 {id === "monitoring" && <span className="nav-dot" aria-label="New alerts" />}
               </button>
             ))}
@@ -110,18 +152,36 @@ function App() {
         ))}
         <div className="sidebar-bottom">
           <div className="sidebar-status">
-            <div className="status-row"><span className={`status-led ${health?.status === "ok" ? "online" : ""}`} /><span>{health?.status === "ok" ? "Local service connected" : "Connecting to service"}</span></div>
+            <div className="status-row"><span className={`status-led ${health?.status === "ok" ? "online" : ""}`} /><span>{health?.status === "ok" ? "Service connected" : "Connecting…"}</span></div>
             <div className="status-meta">{mcpState?.connected ? `MCP ${mcpState.protocol_version ?? "connected"}` : "MCP checking"}</div>
           </div>
-          <button className="help-link" onClick={() => notify("Market Partner is a local demo with synthetic data. Provider access is disabled until configured.")}><CircleHelp size={16} /> Help & data notes</button>
-          <div className="profile-row"><div className="avatar avatar-small">TM</div><div className="workspace-copy"><strong>Tom Mathew</strong><span>Demo investor</span></div><ChevronDown size={15} /></div>
+          <button className="help-link" onClick={() => notify("Market Partner is a local demo with synthetic data. Provider access is disabled until configured.")}><CircleHelp size={15} /> Help & data notes</button>
+          <div className="profile-row"><div className="avatar avatar-small">TM</div><div className="workspace-copy"><strong>Tom Mathew</strong><span>Demo investor</span></div><ChevronDown size={14} className="muted" /></div>
         </div>
       </aside>
 
       <main className="main-area">
         <header className="topbar">
-          <div className="breadcrumbs"><span>Workspace</span><ArrowRight size={13} /><strong>{title}</strong></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              className="mobile-menu-btn"
+              onClick={() => setMobileNavOpen(!mobileNavOpen)}
+              aria-label="Toggle navigation menu"
+            >
+              {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+            <div className="breadcrumbs"><span>Workspace</span><ArrowRight size={13} /><strong>{title}</strong></div>
+          </div>
           <div className="topbar-actions">
+            <button
+              className="theme-toggle-btn"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+              <span>{theme === "dark" ? "Light" : "Dark"}</span>
+            </button>
             <span className="env-pill"><span className="status-led online" /> Sample workspace</span>
             <span className="demo-warning"><ShieldCheck size={14} /> Synthetic demo data</span>
           </div>
@@ -404,28 +464,61 @@ function PortfolioPage({ notify }: { notify: (message: string) => void }) {
         <MetricCard label="Coverage" value={overview.snapshot.coverage === "partial" ? "Partial" : overview.snapshot.coverage} detail="One sample position has no value" icon={<Gauge size={17} />} tone="amber" />
         <MetricCard label="Account mode" value="Fixture" detail="Two sample accounts · read-only" icon={<ShieldCheck size={17} />} />
       </div>
+      <div className="content-grid half-and-half">
+        <PortfolioAllocationChart overview={overview} />
+        <HoldingsComparisonChart overview={overview} />
+      </div>
       <div className="content-grid two-thirds">
         <Panel>
           <SectionHeading title="Current positions" detail="Grouped by instrument · amount shown in INR" />
-          <div className="table-wrap"><table><thead><tr><th>Security</th><th>Account</th><th>Quantity</th><th>Market value</th><th>As of</th></tr></thead><tbody>
-            {overview.snapshot.positions.map((position: JsonRecord) => <tr key={`${position.account_ref}-${position.symbol}`}><td><div className="table-primary">{position.symbol}</div><div className="table-secondary">{position.company_name}</div></td><td>{position.account_alias}</td><td>{position.quantity}</td><td>{money(position.market_value_minor)}</td><td>{position.valuation_as_of ? prettyDate(position.valuation_as_of) : <span className="text-amber">Missing value</span>}</td></tr>)}
-          </tbody></table></div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Security</th>
+                  <th>Account</th>
+                  <th style={{ textAlign: "right" }}>Quantity</th>
+                  <th style={{ textAlign: "right" }}>Market value</th>
+                  <th style={{ textAlign: "right" }}>As of</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overview.snapshot.positions.map((position: JsonRecord) => (
+                  <tr key={`${position.account_ref}-${position.symbol}`}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span className="table-primary">{position.symbol}</span>
+                        {position.exchange && <span className="data-badge badge-gray">{position.exchange}</span>}
+                      </div>
+                      <div className="table-secondary">{position.company_name}</div>
+                    </td>
+                    <td>{position.account_alias}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right" }}>{position.quantity}</td>
+                    <td style={{ fontFamily: "var(--font-mono)", textAlign: "right", fontWeight: 600 }}>
+                      {position.market_value_minor != null ? (
+                        money(position.market_value_minor)
+                      ) : (
+                        <span className="data-badge badge-amber">Missing value</span>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      {position.valuation_as_of ? prettyDate(position.valuation_as_of) : <span className="text-amber">Unavailable</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="table-footnote"><CircleHelp size={13} /> Missing valuation is unavailable, not zero. This view is not total net worth or buying power.</div>
         </Panel>
-        <Panel>
-          <SectionHeading title="Exposure by sector" detail="Invested holdings exposure" />
-          <div className="exposure-list">{overview.metrics.map((metric: JsonRecord) => <div className="exposure-item" key={metric.label}><div className="exposure-copy"><strong>{metric.label.replace(" invested holdings exposure", "")}</strong><span>{money(metric.amount_minor)}</span></div><div className="exposure-track"><div className="exposure-fill" style={{ width: `${Math.min(metric.percent ?? 0, 100)}%` }} /></div><span className="exposure-percent">{metric.percent == null ? "—" : `${metric.percent}%`}</span></div>)}</div>
-          <div className="aside-note"><CircleHelp size={14} /> Percentages are withheld when the denominator is incomplete.</div>
-        </Panel>
+        <SectorExposureVisualizer overview={overview} />
       </div>
     </>}
     <div className="content-grid two-thirds">
       <Panel><SectionHeading title="Account activity" detail="Synthetic sample records · incomplete fee history" />
         {activities.length ? <div className="activity-list">{activities.map((item) => <div className="activity-item" key={item.activity_id}><div className={`activity-type ${item.activity_type === "BUY" ? "buy" : "sell"}`}><ArrowDownLeft size={15} /></div><div className="activity-copy"><strong>{item.activity_type} {item.instrument_id.split(":")[1]}</strong><span>{prettyDate(item.date)} · {item.account_alias}</span></div><div className="activity-amount">{item.gross_amount_minor ? money(item.gross_amount_minor) : "Amount unavailable"}<span>Fees incomplete</span></div></div>)}</div> : <EmptyState title="No sample activities available" copy="Connect a sample account to see its fixture history." />}
       </Panel>
-      <Panel><SectionHeading title="Performance" detail="Only calculated when all required inputs are present" />
-        <div className="performance-empty"><div className="empty-icon amber-icon"><Gauge size={18} /></div><strong>Return is unavailable</strong><p>{performance?.missing_inputs?.join(", ") ?? "Required historical data is missing."}</p><DataBadge tone="amber">Insufficient data</DataBadge></div>
-      </Panel>
+      <PerformanceDiagnostic performance={performance} />
     </div>
     <Panel><SectionHeading title="Broker-published research" detail="Kept separate from Market Partner analysis" action={<div className="inline-form"><select aria-label="Select demo security" value={symbol} onChange={(event) => setSymbol(event.target.value)}>{demoSymbols.map((item) => <option key={item}>{item}</option>)}</select><Button variant="secondary" onClick={() => void checkBroker()} icon={<Search size={14} />}>Check availability</Button></div>} />
       {broker ? <div className="broker-unavailable"><BookOpenCheck size={17} /><div><strong>Provider not configured</strong><span>{broker.message}</span></div></div> : <div className="inline-hint">Broker-authored analysis will never be replaced with model-generated content.</div>}
@@ -475,6 +568,10 @@ function ResearchPage({ notify }: { notify: (message: string) => void }) {
       <label className="field field-wide"><span>Research question</span><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={500} /></label>
       <div className="field-action"><Button onClick={() => void research()} disabled={loading} icon={loading ? <LoaderCircle className="spin" size={15} /> : <Search size={15} />}>{loading ? "Researching…" : "Run research"}</Button></div>
     </div><div className="form-footnote"><Activity size={13} /> Five bounded roles · two specialists, independent bull/bear, constrained synthesis · citation, policy, and numeric checks</div></Panel>
+
+    <Suspense fallback={<div className="panel loading-panel"><Loading label="Initializing 3D market topology…" /></div>}>
+      <MarketNetwork3D />
+    </Suspense>
 
     {!run && !loading && <Panel><EmptyState title="Your next research run will appear here" copy="Choose a demo security and question. The source packet, dated citations, disagreement, and unknowns will stay attached to the result." /></Panel>}
     {loading && <Panel><Loading label="Running the bounded research workflow" /><div className="workflow-steps"><span className="done">Resolve company</span><span className="done">Validate source packet</span><span className="active">Independent analysis</span><span>Synthesize & check citations</span></div></Panel>}
@@ -720,7 +817,83 @@ function OrdersPage({ notify, initialSymbol }: { notify: (message: string) => vo
     {editingOrder && <Panel className="change-preview"><div className="preview-header"><div><div className="eyebrow">Order change draft · no change has been applied</div><h2>Modify {editingOrder.instrument_id.split(":")[1]}</h2></div><DataBadge tone="amber">Local paper only</DataBadge></div><p>Current terms: {editingOrder.quantity} shares at ₹{editingOrder.limit_price}.</p><div className="form-grid order-form"><label className="field"><span>New whole-share quantity</span><input type="number" min="1" step="1" value={changeTerms.quantity} onChange={(event) => setChangeTerms((terms) => ({ ...terms, quantity: event.target.value }))} /></label><label className="field"><span>New limit price (₹)</span><input type="number" min="0.01" step="0.01" value={changeTerms.limit_price} onChange={(event) => setChangeTerms((terms) => ({ ...terms, limit_price: event.target.value }))} /></label></div><div className="order-bottom"><Button variant="secondary" onClick={() => setEditingOrder(null)}>Discard</Button><Button onClick={() => void makeChangePreview(editingOrder, "modify")} disabled={busy}>Review modification</Button></div></Panel>}
     {changePreview && <Panel className="change-preview"><div className="preview-header"><div><div className="eyebrow">Separate confirmation required · expires {prettyDate(changePreview.expires_at)}</div><h2>{changePreview.action === "cancel" ? "Cancel paper order?" : "Modify paper order?"}</h2></div><DataBadge tone="amber">Local paper only</DataBadge></div><p>{changePreview.action === "cancel" ? `Cancel ${changePreview.terms.quantity} shares at ₹${changePreview.terms.limit_price} in the local simulator.` : `Before: ${changePreview.terms.from_quantity} shares at ₹${changePreview.terms.from_limit_price}. After: ${changePreview.terms.quantity} shares at ₹${changePreview.terms.limit_price}.`}</p><div className="confirm-row"><label className="checkbox-label"><input type="checkbox" checked={changeConfirmed} onChange={(event) => setChangeConfirmed(event.target.checked)} /><span>I confirm this exact change to the local paper order.</span></label><Button variant={changePreview.action === "cancel" ? "danger" : "primary"} onClick={() => void confirmChange()} disabled={!changeConfirmed || busy}>Confirm {changePreview.action}</Button></div></Panel>}
     <Panel><SectionHeading title="Paper-order history" detail="Local simulation and verified sandbox status; live brokerage orders are unavailable." action={<Button variant="secondary" onClick={() => void refresh()} icon={<RefreshCw size={14} />}>Refresh status</Button>} />
-      {orders.length ? <div className="table-wrap"><table><thead><tr><th>Security</th><th>Side / quantity</th><th>Limit</th><th>Status</th><th>Last checked</th><th>Actions</th></tr></thead><tbody>{orders.map((order) => <tr key={order.order_id}><td><div className="table-primary">{order.instrument_id.split(":")[1]}</div><div className="table-secondary">{order.mode === "sandbox" ? `Upstox sandbox · ${order.provider_order_id ?? "reconciliation pending"}` : "Local simulation · no exchange order"}</div></td><td>{order.side} {order.quantity}</td><td>{money(Math.round(Number(order.limit_price) * 100))}</td><td><DataBadge tone={order.status.includes("CANCELLED") ? "gray" : order.status.includes("UNKNOWN") ? "amber" : "green"}>{order.status.replaceAll("_", " ")}</DataBadge></td><td>{prettyDate(order.status_as_of)}</td><td><div className="table-action-group"><button className="text-action" onClick={async () => { try { const status = await api<JsonRecord>(`/api/orders/${order.order_id}/status?refresh=true`); notify(`Status: ${status.status} · ${status.mode}`); await refresh(); } catch (error) { notify(error instanceof Error ? error.message : "Status unavailable."); } }}>Status</button>{["ACCEPTED_SIMULATED", "OPEN_SIMULATED"].includes(order.status) && <><button className="text-action" onClick={() => startOrderEdit(order)}>Modify</button><button className="text-action subtle-action" onClick={() => void makeChangePreview(order, "cancel")}>Cancel</button></>}</div></td></tr>)}</tbody></table></div> : <EmptyState title="No paper orders yet" copy="Create and review a preview. It will only enter this local simulator after your separate confirmation." />}
+      {orders.length ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Security</th>
+                <th>Side / Quantity</th>
+                <th style={{ textAlign: "right" }}>Limit Price</th>
+                <th>Status</th>
+                <th style={{ textAlign: "right" }}>Last Checked</th>
+                <th style={{ textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.order_id}>
+                  <td>
+                    <div className="table-primary">{order.instrument_id.split(":")[1]}</div>
+                    <div className="table-secondary">
+                      {order.mode === "sandbox" ? `Upstox sandbox · ${order.provider_order_id ?? "reconciliation pending"}` : "Local simulation · no exchange order"}
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className={`data-badge ${order.side === "BUY" ? "badge-green" : "badge-amber"}`}>
+                        {order.side}
+                      </span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>
+                        {order.quantity}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: "var(--font-mono)", fontWeight: 600, textAlign: "right" }}>
+                    {money(Math.round(Number(order.limit_price) * 100))}
+                  </td>
+                  <td>
+                    <DataBadge tone={order.status.includes("CANCELLED") ? "gray" : order.status.includes("UNKNOWN") ? "amber" : "green"}>
+                      {order.status.replaceAll("_", " ")}
+                    </DataBadge>
+                  </td>
+                  <td style={{ textAlign: "right" }}>{prettyDate(order.status_as_of)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <div className="table-action-group" style={{ justifyContent: "flex-end" }}>
+                      <button
+                        className="text-action"
+                        onClick={async () => {
+                          try {
+                            const status = await api<JsonRecord>(`/api/orders/${order.order_id}/status?refresh=true`);
+                            notify(`Status: ${status.status} · ${status.mode}`);
+                            await refresh();
+                          } catch (error) {
+                            notify(error instanceof Error ? error.message : "Status unavailable.");
+                          }
+                        }}
+                      >
+                        Status
+                      </button>
+                      {["ACCEPTED_SIMULATED", "OPEN_SIMULATED"].includes(order.status) && (
+                        <>
+                          <button className="text-action" onClick={() => startOrderEdit(order)}>
+                            Modify
+                          </button>
+                          <button className="text-action subtle-action" onClick={() => void makeChangePreview(order, "cancel")}>
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyState title="No paper orders yet" copy="Create and review a preview. It will only enter this local simulator after your separate confirmation." />
+      )}
     </Panel>
   </div>;
 }

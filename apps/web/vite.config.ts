@@ -4,4 +4,13 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173, strictPort: true },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          charts: ["chart.js"],
+        },
+      },
+    },
+  },
 });
